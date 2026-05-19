@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 const multer = require('multer');
 const fs = require('fs');
 
+const VERSION = '1.1.0';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -45,7 +46,7 @@ async function initDB() {
   console.log('DB ready');
 }
 
-app.get('/', (req, res) => res.json({ status: 'ok', service: 'sudaca-brain' }));
+app.get('/', (req, res) => res.json({ status: 'ok', service: 'sudaca-brain', version: VERSION }));
 
 // ---- ANALYZE (multipart upload) ----
 app.post('/analyze', upload.single('video'), async (req, res) => {
@@ -266,4 +267,4 @@ app.get('/stats', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-initDB().then(() => app.listen(PORT, () => console.log(`Sudaca Brain backend running on port ${PORT}`)));
+initDB().then(() => app.listen(PORT, () => console.log(`Sudaca Brain v${VERSION} running on port ${PORT}`)));
