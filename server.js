@@ -52,6 +52,12 @@ app.post('/analyze', upload.single('video'), async (req, res) => {
   const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
   if (!ANTHROPIC_KEY) return res.status(500).json({ error: 'ANTHROPIC_API_KEY no configurada' });
 
+  console.log('--- /analyze request ---');
+  console.log('file:', req.file ? `${req.file.originalname} ${req.file.size} bytes` : 'NO FILE');
+  console.log('body keys:', Object.keys(req.body));
+  console.log('url:', req.body.url);
+  console.log('title:', req.body.title);
+
   const { url, title, views, likes, comment_count, comments, glosario, patrones } = req.body;
   
   let glosarioObj = {};
