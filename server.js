@@ -3,8 +3,10 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const multer = require('multer');
 const fs = require('fs');
+const { execSync } = require('child_process');
+const path = require('path');
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -123,20 +125,41 @@ Sé exhaustivo. El video se descarta después de este análisis.`;
     let messages;
 
     if (req.file) {
-      const videoBuffer = fs.readFileSync(req.file.path);
-      const videoBase64 = videoBuffer.toString('base64');
-      const mimeType = req.file.mimetype || 'video/mp4';
+      // Extract frames using ffmpeg (1 frame every 3 seconds, max 15 frames)
+      const framesDir = `/tmp/frames_${Date.now()}`;
+      fs.mkdirSync(framesDir, { recursive: true });
       
-      messages = [{
-        role: 'user',
-        content: [
-          { type: 'video', source: { type: 'base64', media_type: mimeType, data: videoBase64 } },
-          { type: 'text', text: prompt }
-        ]
-      }];
+      let frameImages = [];
+      try {
+        execSync(`ffmpeg -i "${req.file.path}" -vf "fps=1/3,scale=640:-1" -frames:v 15 "${framesDir}/frame_%03d.jpg" -y 2>/dev/null`);
+        const frameFiles = fs.readdirSync(framesDir).filter(f => f.endsWith('.jpg')).sort();
+        console.log(`Extracted ${frameFiles.length} frames`);
+        
+        frameImages = frameFiles.map(f => {
+          const imgData = fs.readFileSync(path.join(framesDir, f)).toString('base64');
+          return { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imgData } };
+        });
+        
+        // Cleanup frames
+        frameFiles.forEach(f => fs.unlinkSync(path.join(framesDir, f)));
+        fs.rmdirSync(framesDir);
+      } catch(ffmpegErr) {
+        console.log('ffmpeg error:', ffmpegErr.message);
+      }
 
-      // Cleanup temp file
       fs.unlinkSync(req.file.path);
+
+      if (frameImages.length > 0) {
+        messages = [{
+          role: 'user',
+          content: [
+            { type: 'text', text: `Estos son ${frameImages.length} frames extraídos del video (1 cada 3 segundos). Analizalos en secuencia para entender el video completo.\n\n` + prompt },
+            ...frameImages
+          ]
+        }];
+      } else {
+        messages = [{ role: 'user', content: prompt }];
+      }
     } else {
       messages = [{ role: 'user', content: prompt }];
     }
