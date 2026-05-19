@@ -1,9 +1,12 @@
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
+const multer = require('multer');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -11,9 +14,8 @@ const pool = new Pool({
 });
 
 app.use(cors());
-app.use(express.json({ limit: '150mb' }));
+app.use(express.json({ limit: '10mb' }));
 
-// Init tables
 async function initDB() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS videos (
@@ -43,23 +45,23 @@ async function initDB() {
   console.log('DB ready');
 }
 
-// Health
 app.get('/', (req, res) => res.json({ status: 'ok', service: 'sudaca-brain' }));
 
-// ---- ANALYZE ----
-app.post('/analyze', async (req, res) => {
-  const { videoBase64, mimeType, url, title, views, likes, comment_count, comments, glosario, patrones, contextVideos } = req.body;
-
+// ---- ANALYZE (multipart upload) ----
+app.post('/analyze', upload.single('video'), async (req, res) => {
   const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
   if (!ANTHROPIC_KEY) return res.status(500).json({ error: 'ANTHROPIC_API_KEY no configurada' });
 
-  const glosarioStr = Object.entries(glosario || {}).length > 0
-    ? 'Glosario conocido de Javier: ' + Object.entries(glosario).map(([k,v]) => `"${k}" = ${v}`).join(', ')
-    : 'No hay glosario previo todavía.';
+  const { url, title, views, likes, comment_count, comments, glosario, patrones } = req.body;
+  
+  let glosarioObj = {};
+  let patronesArr = [];
+  try { glosarioObj = JSON.parse(glosario || '{}'); } catch(e) {}
+  try { patronesArr = JSON.parse(patrones || '[]'); } catch(e) {}
 
-  const contextPrevio = (contextVideos && contextVideos.length > 0)
-    ? `Ya analizaste ${contextVideos.length} video(s) anteriores. Patrones identificados: ${(patrones || []).join(', ') || 'ninguno aún'}.`
-    : 'Este es el primer video analizado.';
+  const glosarioStr = Object.entries(glosarioObj).length > 0
+    ? 'Glosario conocido de Javier: ' + Object.entries(glosarioObj).map(([k,v]) => `"${k}" = ${v}`).join(', ')
+    : 'No hay glosario previo todavía.';
 
   const prompt = `Sos un analizador experto del creador de contenido Javier Romero, conocido como "Joyería Sudaca". 
 
@@ -67,66 +69,70 @@ CONTEXTO DEL CREADOR:
 Javier es joyero argentino con ~105K suscriptores en YouTube y ~170K seguidores totales. Sus Shorts son famosos por:
 - Sarcasmo e ironía: dice una cosa y muestra otra, o nombra las cosas de forma absurda y grandilocuente
 - Nombres inventados para materiales reales (ej: bórax = "sal del himalaya" o "lágrimas de ángel", ácido nítrico = "bebida de los pueblos nobles", lima = "supositorio del joyero")
-- Los nombres NO son siempre iguales, varían. A veces usa uno, a veces otro, a veces inventa uno nuevo
+- Los nombres NO son siempre iguales, varían
 - Humor de taller: chistes sobre herramientas, metales, procesos químicos
 - Frases características como "porque esto es joyería sudaca papá"
-- Cuarta pared: habla directo a cámara, rompe el formato
-- Anticlímax: construye expectativa y remata con algo absurdo o mundano
-- Resignación activa: acepta lo malo del proceso como si fuera normal
+- Cuarta pared, anticlímax, resignación activa
 
 ${glosarioStr}
-${contextPrevio}
+Patrones previos: ${patronesArr.join(', ') || 'ninguno aún'}
 
 DATOS DEL VIDEO:
-URL YouTube: ${url}
-Título: ${title}
-Views: ${views || 'no proporcionado'}
-Likes: ${likes || 'no proporcionado'}
-Comentarios del video:
-${comments || 'No se proporcionaron comentarios.'}
+URL: ${url}, Título: ${title}
+Views: ${views || '?'}, Likes: ${likes || '?'}
+Comentarios: ${comments || 'No proporcionados.'}
 
-TU TAREA - Analizá el video con MÁXIMO DETALLE:
+ANALIZÁ CON MÁXIMO DETALLE:
 
 ## ANÁLISIS VISUAL
-Describí en detalle qué se ve: materiales, herramientas, procesos, ambiente del taller, acciones específicas momento a momento.
+Qué se ve exactamente: materiales, herramientas, procesos, acciones momento a momento.
 
 ## ANÁLISIS DEL DISCURSO
-Transcribí y analizá exactamente qué dice Javier, frase por frase. Identificá el ritmo, las pausas, los énfasis.
+Transcripción frase por frase. Ritmo, pausas, énfasis.
 
 ## CRUCES VISUAL/VERBAL (CRÍTICO)
-Identificá cada momento donde hay contradicción, ironía o humor entre lo que se ve y lo que se dice. Explicá el mecanismo del chiste o recurso en cada caso.
+Cada momento donde hay contradicción, ironía o humor entre lo visual y lo verbal. Explicá el mecanismo del chiste.
 
 ## ESTRUCTURA NARRATIVA
-- Gancho de apertura (primeros 3 segundos): ¿cómo engancha?
-- Desarrollo: ¿cómo mantiene la atención?
-- Remate/cierre: ¿cómo termina?
+- Gancho (primeros 3 segundos)
+- Desarrollo
+- Remate/cierre
 
 ## ANÁLISIS DE COMENTARIOS
-Si hay comentarios, analizá: ¿qué les resonó? ¿Comentan sobre algo visual, algo que dijo, un nombre inventado específico? ¿Qué emociones expresan?
+Qué resonó, qué emociones expresan, qué momento del video generó cada reacción.
 
 ## GLOSARIO DETECTADO
-Lista cualquier nombre inventado, frase especial o recurso lingüístico que uses en este video. Formato: TÉRMINO_USADO → qué es realmente
+Nombres inventados nuevos. Formato: TÉRMINO_USADO → qué es realmente
 
 ## PATRONES REPLICABLES
-¿Qué recursos de este video tienen potencial de replicarse en otros contextos? ¿Por qué funcionaron?
+Qué recursos tienen potencial de replicarse y por qué funcionaron.
 
 ## PREGUNTAS PARA JAVIER
-Si hay algo que no entendiste, listalo como preguntas concretas.
-Formato: PREGUNTA_N: [tu pregunta específica]
+Dudas concretas sobre el video. Formato: PREGUNTA_N: [pregunta]
 
-Sé exhaustivo. Este análisis queda guardado permanentemente. El video se descarta después.`;
+Sé exhaustivo. El video se descarta después de este análisis.`;
 
   try {
-    const messages = videoBase64 ? [{
-      role: 'user',
-      content: [
-        { type: 'video', source: { type: 'base64', media_type: mimeType || 'video/mp4', data: videoBase64 } },
-        { type: 'text', text: prompt }
-      ]
-    }] : [{
-      role: 'user',
-      content: prompt
-    }];
+    let messages;
+
+    if (req.file) {
+      const videoBuffer = fs.readFileSync(req.file.path);
+      const videoBase64 = videoBuffer.toString('base64');
+      const mimeType = req.file.mimetype || 'video/mp4';
+      
+      messages = [{
+        role: 'user',
+        content: [
+          { type: 'video', source: { type: 'base64', media_type: mimeType, data: videoBase64 } },
+          { type: 'text', text: prompt }
+        ]
+      }];
+
+      // Cleanup temp file
+      fs.unlinkSync(req.file.path);
+    } else {
+      messages = [{ role: 'user', content: prompt }];
+    }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -135,11 +141,7 @@ Sé exhaustivo. Este análisis queda guardado permanentemente. El video se desca
         'x-api-key': ANTHROPIC_KEY,
         'anthropic-version': '2023-06-01'
       },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 4000,
-        messages
-      })
+      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 4000, messages })
     });
 
     const data = await response.json();
@@ -147,179 +149,115 @@ Sé exhaustivo. Este análisis queda guardado permanentemente. El video se desca
     res.json({ analysis: data.content[0].text });
 
   } catch (err) {
+    if (req.file) try { fs.unlinkSync(req.file.path); } catch(e) {}
     res.status(500).json({ error: err.message });
   }
 });
 
-// ---- REFINE (post-answers) ----
+// ---- REFINE ----
 app.post('/refine', async (req, res) => {
   const { analysis, answers } = req.body;
   const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
-
-  const prompt = `Tenés este análisis de un video de Joyería Sudaca:
-
-${analysis}
-
-Javier respondió estas preguntas:
-${answers.map(a => `P: ${a.question}\nR: ${a.answer}`).join('\n\n')}
-
-Actualizá el GLOSARIO DETECTADO y los PATRONES REPLICABLES incorporando estas respuestas. Devolvé solo las dos secciones actualizadas.`;
-
+  const prompt = `Tenés este análisis de un video de Joyería Sudaca:\n\n${analysis}\n\nJavier respondió estas preguntas:\n${answers.map(a => `P: ${a.question}\nR: ${a.answer}`).join('\n\n')}\n\nActualizá el GLOSARIO DETECTADO y los PATRONES REPLICABLES. Devolvé solo esas dos secciones actualizadas.`;
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        messages: [{ role: 'user', content: prompt }]
-      })
+      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] })
     });
     const data = await response.json();
     res.json({ refined: data.content[0].text });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ---- GENERATE COPY ----
+// ---- GENERATE ----
 app.post('/generate', async (req, res) => {
   const { description, momento, tono, glosario, patrones, contextVideos } = req.body;
   const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
-
   const prompt = `Sos el asistente creativo de Javier "Joyería Sudaca" Romero.
 
-CONOCIMIENTO ACUMULADO DE JAVIER:
+Glosario: ${Object.entries(glosario||{}).map(([k,v])=>`"${k}"=${v}`).join(', ')||'En construcción'}
+Patrones: ${(patrones||[]).join(', ')||'En construcción'}
+Videos previos (resumen): ${(contextVideos||[]).slice(-3).map(v=>`${v.views} views: ${(v.analysis||'').substring(0,400)}`).join('\n---\n')}
 
-Glosario (nombres que usa para las cosas):
-${Object.entries(glosario || {}).map(([k,v]) => `"${k}" = ${v}`).join('\n') || 'En construcción'}
+NUEVO VIDEO: ${description}
+Momento: ${momento}, Tono: ${tono}
 
-Patrones que funcionan en sus videos:
-${(patrones || []).join('\n') || 'En construcción'}
+GENERÁ 3 OPCIONES DE COPY. Cada una:
+- OPCIÓN_N: [nombre]
+- PATRÓN USADO: [mecanismo]
+- COPY COMPLETO: [guión]
+- NOMBRES SUGERIDOS: [variantes nuevas si aplica]
 
-ANÁLISIS DE VIDEOS ANTERIORES (los más recientes):
-${(contextVideos || []).slice(-5).map(v => `Video (${v.views?.toLocaleString() || '?'} views, ${v.likes?.toLocaleString() || '?'} likes):\n${v.analysis ? v.analysis.substring(0, 800) : ''}`).join('\n\n---\n\n')}
-
-NUEVO VIDEO A GENERAR:
-Descripción: ${description}
-Momento del proceso: ${momento}
-Tono preferido: ${tono}
-
-GENERÁ 3 OPCIONES DE COPY para este video. Cada opción debe:
-1. Usar el estilo de Javier (sarcasmo, nombres inventados, estructura narrativa probada)
-2. NO repetir frases exactas de videos anteriores, sino replicar el MECANISMO
-3. Si aplica un nombre inventado para algo, que sea NUEVO o una variación no usada
-4. Incluir: gancho de apertura + desarrollo + remate/cierre
-5. Señalar qué patrón o recurso está usando en cada opción
-
-Para cada opción indicá:
-- OPCIÓN_N: [nombre del enfoque]
-- PATRÓN USADO: [qué mecanismo replica y por qué probablemente funcione]
-- COPY COMPLETO: [el guión/copy]
-- NOMBRES SUGERIDOS: [si hay materiales que nombrar, sugerí 2-3 variantes nuevas]`;
+No repetir frases exactas de videos anteriores. Replicar el MECANISMO, no las palabras.`;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
-        messages: [{ role: 'user', content: prompt }]
-      })
+      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 2000, messages: [{ role: 'user', content: prompt }] })
     });
     const data = await response.json();
     res.json({ copy: data.content[0].text });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ---- VIDEOS ----
 app.get('/videos', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT * FROM videos ORDER BY timestamp DESC');
-    res.json(result.rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  try { const r = await pool.query('SELECT * FROM videos ORDER BY timestamp DESC'); res.json(r.rows); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/videos', async (req, res) => {
   const { url, title, views, likes, comment_count, analysis, answers } = req.body;
   try {
-    const result = await pool.query(`
+    const r = await pool.query(`
       INSERT INTO videos (url, title, views, likes, comment_count, analysis, answers)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      ON CONFLICT (url) DO UPDATE SET
-        title = EXCLUDED.title, views = EXCLUDED.views, likes = EXCLUDED.likes,
-        comment_count = EXCLUDED.comment_count, analysis = EXCLUDED.analysis,
-        answers = EXCLUDED.answers, timestamp = NOW()
-      RETURNING *
-    `, [url, title, views, likes, comment_count, analysis, JSON.stringify(answers || [])]);
-    res.json(result.rows[0]);
+      VALUES ($1,$2,$3,$4,$5,$6,$7)
+      ON CONFLICT (url) DO UPDATE SET title=EXCLUDED.title, views=EXCLUDED.views, likes=EXCLUDED.likes,
+      comment_count=EXCLUDED.comment_count, analysis=EXCLUDED.analysis, answers=EXCLUDED.answers, timestamp=NOW()
+      RETURNING *`, [url, title, views, likes, comment_count, analysis, JSON.stringify(answers||[])]);
+    res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.delete('/videos/:id', async (req, res) => {
-  try {
-    await pool.query('DELETE FROM videos WHERE id = $1', [req.params.id]);
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  try { await pool.query('DELETE FROM videos WHERE id=$1',[req.params.id]); res.json({ok:true}); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ---- GLOSARIO ----
 app.get('/glosario', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM glosario ORDER BY created_at ASC');
-    const obj = {};
-    result.rows.forEach(r => obj[r.key] = r.value);
-    res.json(obj);
+    const r = await pool.query('SELECT * FROM glosario ORDER BY created_at ASC');
+    const obj = {}; r.rows.forEach(row => obj[row.key] = row.value); res.json(obj);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/glosario', async (req, res) => {
   const { key, value } = req.body;
-  try {
-    await pool.query(`INSERT INTO glosario (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [key, value]);
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  try { await pool.query(`INSERT INTO glosario (key,value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`,[key,value]); res.json({ok:true}); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ---- PATRONES ----
 app.get('/patrones', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT patron FROM patrones ORDER BY created_at ASC');
-    res.json(result.rows.map(r => r.patron));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  try { const r = await pool.query('SELECT patron FROM patrones ORDER BY created_at ASC'); res.json(r.rows.map(r=>r.patron)); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/patrones', async (req, res) => {
   const { patron } = req.body;
-  try {
-    await pool.query(`INSERT INTO patrones (patron) VALUES ($1) ON CONFLICT (patron) DO NOTHING`, [patron]);
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  try { await pool.query(`INSERT INTO patrones (patron) VALUES ($1) ON CONFLICT (patron) DO NOTHING`,[patron]); res.json({ok:true}); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ---- STATS ----
 app.get('/stats', async (req, res) => {
   try {
-    const [v, g, p] = await Promise.all([
-      pool.query('SELECT COUNT(*) FROM videos'),
-      pool.query('SELECT COUNT(*) FROM glosario'),
-      pool.query('SELECT COUNT(*) FROM patrones')
-    ]);
+    const [v,g,p] = await Promise.all([pool.query('SELECT COUNT(*) FROM videos'),pool.query('SELECT COUNT(*) FROM glosario'),pool.query('SELECT COUNT(*) FROM patrones')]);
     res.json({ videos: parseInt(v.rows[0].count), glosario: parseInt(g.rows[0].count), patrones: parseInt(p.rows[0].count) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-initDB().then(() => {
-  app.listen(PORT, () => console.log(`Sudaca Brain backend running on port ${PORT}`));
-});
+initDB().then(() => app.listen(PORT, () => console.log(`Sudaca Brain backend running on port ${PORT}`)));
