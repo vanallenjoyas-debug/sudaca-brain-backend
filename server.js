@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '1.6.2';
+const VERSION = '1.6.3';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -93,7 +93,14 @@ app.post('/analyze-audio', requireAuth, upload.single('video'), async (req, res)
 
   const audioPath = `/tmp/audio_${Date.now()}.wav`;
   try {
-    execSync(`ffmpeg -y -i "${req.file.path}" -vn -ac 1 -ar 16000 "${audioPath}" 2>&1`);
+    try {
+      const result = execSync(`ffmpeg -y -i "${req.file.path}" -vn -ac 1 -ar 16000 "${audioPath}" 2>&1`);
+      console.log('ffmpeg output:', result.toString().substring(0, 500));
+    } catch(ffErr) {
+      const errMsg = ffErr.stdout?.toString() || ffErr.stderr?.toString() || ffErr.message;
+      console.log('ffmpeg full error:', errMsg.substring(0, 1000));
+      throw new Error('ffmpeg failed: ' + errMsg.substring(0, 200));
+    }
     const audioBuffer = fs.readFileSync(audioPath);
     console.log(`Audio extracted: ${(audioBuffer.length/1024).toFixed(0)}KB`);
 
