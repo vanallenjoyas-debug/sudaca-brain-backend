@@ -6,14 +6,14 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '1.7.0';
+const VERSION = '1.7.1';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
 
 // ---- AUTH ----
 const APP_PASSWORD = process.env.APP_PASSWORD || 'sudaca2024';
