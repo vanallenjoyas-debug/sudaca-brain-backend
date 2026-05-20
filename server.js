@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '1.6.3';
+const VERSION = '1.7.0';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -66,7 +66,7 @@ app.post('/login', (req, res) => {
   else res.status(401).json({ error: 'Contraseña incorrecta' });
 });
 
-// ---- YOUTUBE PROXY (API key never leaves server) ----
+// ---- YOUTUBE PROXY ----
 app.get('/yt/video/:videoId', requireAuth, async (req, res) => {
   const YT_KEY = process.env.YOUTUBE_API_KEY;
   if (!YT_KEY) return res.status(500).json({ error: 'YOUTUBE_API_KEY no configurada' });
@@ -83,41 +83,6 @@ app.get('/yt/comments/:videoId', requireAuth, async (req, res) => {
     const r = await fetch(`https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${req.params.videoId}&order=relevance&maxResults=50&key=${YT_KEY}`);
     res.json(await r.json());
   } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ---- ANALYZE AUDIO ONLY ----
-app.post('/analyze-audio', requireAuth, upload.single('video'), async (req, res) => {
-  if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'ANTHROPIC_API_KEY no configurada' });
-  console.log(`[v${VERSION}] /analyze-audio - file: ${req.file ? req.file.size + ' bytes' : 'NO FILE'}`);
-  if (!req.file) return res.status(400).json({ error: 'No se recibió el video' });
-
-  const audioPath = `/tmp/audio_${Date.now()}.wav`;
-  try {
-    try {
-      const result = execSync(`ffmpeg -y -i "${req.file.path}" -vn -ac 1 -ar 16000 "${audioPath}" 2>&1`);
-      console.log('ffmpeg output:', result.toString().substring(0, 500));
-    } catch(ffErr) {
-      const errMsg = ffErr.stdout?.toString() || ffErr.stderr?.toString() || ffErr.message;
-      console.log('ffmpeg full error:', errMsg.substring(0, 1000));
-      throw new Error('ffmpeg failed: ' + errMsg.substring(0, 200));
-    }
-    const audioBuffer = fs.readFileSync(audioPath);
-    console.log(`Audio extracted: ${(audioBuffer.length/1024).toFixed(0)}KB`);
-
-    const transcription = await callClaude([{ role: 'user', content: [
-      { type: 'document', source: { type: 'base64', media_type: 'audio/wav', data: audioBuffer.toString('base64') } },
-      { type: 'text', text: `Transcribí este audio de un video de YouTube de un joyero argentino llamado Javier "Joyería Sudaca". Incluí timestamps aproximados [0:00], tono y énfasis (mayúsculas para énfasis fuerte), pausas [pausa], risas o sonidos relevantes. Solo la transcripción, sin comentarios.` }
-    ]}], 2000);
-
-    fs.unlinkSync(audioPath);
-    fs.unlinkSync(req.file.path);
-    console.log('Audio transcribed successfully');
-    res.json({ transcription });
-  } catch(err) {
-    try { fs.unlinkSync(audioPath); } catch(e) {}
-    try { fs.unlinkSync(req.file.path); } catch(e) {}
-    res.status(500).json({ error: err.message });
-  }
 });
 
 // ---- ANALYZE ----
@@ -146,7 +111,7 @@ VIDEO: URL: ${url} | Título: ${title}
 Views: ${views || '?'} | Likes: ${likes || '?'}
 
 COPY ORIGINAL DEL VIDEO:
-${copy_original || 'No proporcionado — inferir del análisis visual y audio'}
+${copy_original || 'No proporcionado — inferir del análisis visual'}
 
 COMENTARIOS:
 ${comments || 'No proporcionados'}
@@ -157,69 +122,53 @@ ANALIZÁ CON MÁXIMO DETALLE:
 Frame a frame: materiales, herramientas, procesos, acciones, ambiente del taller.
 
 ## ANÁLISIS DEL DISCURSO
-${copy_original ? 'Con el copy original disponible, analizá cada frase: tono, ritmo, énfasis, intención.' : 'Inferí el discurso desde los frames y el audio. Transcribí lo más posible.'}
+${copy_original ? 'Con el copy original disponible, analizá cada frase: tono, ritmo, énfasis, intención.' : 'Inferí el discurso desde los frames. Transcribí lo más posible.'}
 
 ## CRUCES VISUAL/VERBAL (CRÍTICO)
-Cada contradicción, ironía o humor entre lo que se ve y lo que se dice. Explicá el mecanismo exacto del chiste. Identificá qué nombre inventado usó y por qué funciona.
+Cada contradicción, ironía o humor entre lo que se ve y lo que se dice. Explicá el mecanismo exacto del chiste.
 
 ## ESTRUCTURA NARRATIVA
 - GANCHO (primeros 3 segundos)
-- DESARROLLO: cómo mantiene la atención
-- REMATE: cómo cierra
+- DESARROLLO
+- REMATE
 
 ## ANÁLISIS DE COMENTARIOS
-- Qué resonó más y por qué
-- PEDIDOS DE CONTENIDO: comentarios donde la gente pide algo específico
+Qué resonó, PEDIDOS DE CONTENIDO específicos.
 
 ## GLOSARIO DETECTADO
-Nombres inventados nuevos. Formato: TÉRMINO_USADO → qué es realmente
+Formato: TÉRMINO_USADO → qué es realmente
 
 ## PATRONES REPLICABLES
-Recursos con potencial de replicarse. Por qué funcionaron.
+Recursos con potencial de replicarse y por qué funcionaron.
 
 ## PREGUNTAS PARA JAVIER
 Solo preguntas genuinamente importantes.
 Formato: PREGUNTA_N: [pregunta concreta]
 
-Sé exhaustivo. El video se descarta tras este análisis.`;
+S  exhaustivo. El video se descarta tras este análisis.`;
 
   try {
-    let frameImages = [], audioTranscription = '';
+    let frameImages = [];
     if (req.file) {
       const ts = Date.now();
       const framesDir = `/tmp/frames_${ts}`;
-      const audioPath = `/tmp/audio_${ts}.wav`;
       fs.mkdirSync(framesDir, { recursive: true });
-
-      // Extract 1 frame per second, max 60 frames
       try {
         execSync(`ffmpeg -i "${req.file.path}" -vf "fps=1,scale=480:-1" -frames:v 60 "${framesDir}/frame_%03d.jpg" -y 2>/dev/null`);
         const ff = fs.readdirSync(framesDir).filter(f => f.endsWith('.jpg')).sort();
         console.log(`Extracted ${ff.length} frames at 1fps`);
         frameImages = ff.map(f => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: fs.readFileSync(path.join(framesDir, f)).toString('base64') } }));
-        // Save frames for later use
-        req.body.frames_data = JSON.stringify(frameImages.map(f => f.source.data));
         ff.forEach(f => fs.unlinkSync(path.join(framesDir, f)));
         fs.rmdirSync(framesDir);
       } catch(e) { console.log('ffmpeg frames error:', e.message); }
-
-      try {
-        execSync(`ffmpeg -y -i "${req.file.path}" -vn -ac 1 -ar 16000 "${audioPath}" 2>&1`);
-        const audioBuffer = fs.readFileSync(audioPath);
-        console.log(`Audio extracted: ${(audioBuffer.length/1024).toFixed(0)}KB`);
-        audioTranscription = await callClaude([{ role: 'user', content: [
-          { type: 'document', source: { type: 'base64', media_type: 'audio/wav', data: audioBuffer.toString('base64') } },
-          { type: 'text', text: `Transcribí este audio de un video de YouTube de un joyero argentino llamado Javier "Joyería Sudaca". Incluí timestamps aproximados [0:00], tono y énfasis (mayúsculas para énfasis fuerte), pausas [pausa], risas o sonidos relevantes. Solo la transcripción, sin comentarios.` }
-        ]}], 2000);
-        console.log('Audio transcribed');
-        fs.unlinkSync(audioPath);
-      } catch(e) { console.log('Audio error:', e.message); try { fs.unlinkSync(audioPath); } catch(e2) {} }
-
       fs.unlinkSync(req.file.path);
     }
 
-    const audioContext = audioTranscription ? `\n\nTRANSCRIPCIÓN DE AUDIO CON TIMESTAMPS:\n${audioTranscription}\n\nUsá esta transcripción para entender el ritmo, énfasis y timing exacto.\n` : '';
-    const messages = [{ role: 'user', content: frameImages.length > 0 ? [{ type: 'text', text: `${frameImages.length} frames + transcripción de audio:${audioContext}\n\n${prompt}` }, ...frameImages] : prompt + audioContext }];
+    const messages = [{ role: 'user', content: frameImages.length > 0
+      ? [{ type: 'text', text: `${frameImages.length} frames del video (1 por segundo):\n\n${prompt}` }, ...frameImages]
+      : prompt
+    }];
+
     const analysis = await callClaude(messages, 4000);
     res.json({ analysis, frames_data: frameImages.map(f => f.source.data) });
   } catch (err) {
@@ -257,11 +206,10 @@ NO repetir frases exactas. Replicar el MECANISMO.` }], 2000);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ---- GENERATE COPY WITH VIDEO ----
+// ---- GENERATE WITH VIDEO ----
 app.post('/generate-with-video', requireAuth, upload.single('video'), async (req, res) => {
   if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'ANTHROPIC_API_KEY no configurada' });
   const { glosario, patrones, contextVideos } = req.body;
-
   let glosarioObj = {}, patronesArr = [], contextArr = [];
   try { glosarioObj = JSON.parse(glosario || '{}'); } catch(e) {}
   try { patronesArr = JSON.parse(patrones || '[]'); } catch(e) {}
@@ -274,7 +222,6 @@ app.post('/generate-with-video', requireAuth, upload.single('video'), async (req
     try {
       execSync(`ffmpeg -i "${req.file.path}" -vf "fps=1,scale=480:-1" -frames:v 60 "${framesDir}/frame_%03d.jpg" -y 2>/dev/null`);
       const ff = fs.readdirSync(framesDir).filter(f => f.endsWith('.jpg')).sort();
-      console.log(`Generate-with-video: ${ff.length} frames`);
       frameImages = ff.map(f => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: fs.readFileSync(path.join(framesDir, f)).toString('base64') } }));
       ff.forEach(f => fs.unlinkSync(path.join(framesDir, f)));
       fs.rmdirSync(framesDir);
@@ -282,14 +229,13 @@ app.post('/generate-with-video', requireAuth, upload.single('video'), async (req
     fs.unlinkSync(req.file.path);
   }
 
-  // Build context from saved frames of previous videos
   const prevFrameImages = [];
   for (const v of contextArr.slice(0, 3)) {
-    if (v.frames_data && v.frames_data.length > 0) {
-      // Take 3 representative frames from each previous video
+    if (v.frames_data?.length > 0) {
       const frames = v.frames_data;
-      const picks = [0, Math.floor(frames.length/2), frames.length-1].filter(i => i < frames.length);
-      picks.forEach(i => prevFrameImages.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: frames[i] } }));
+      [0, Math.floor(frames.length/2), frames.length-1].filter(i => i < frames.length).forEach(i =>
+        prevFrameImages.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: frames[i] } })
+      );
     }
   }
 
@@ -297,24 +243,17 @@ app.post('/generate-with-video', requireAuth, upload.single('video'), async (req
 
 Glosario: ${Object.entries(glosarioObj).map(([k,v])=>`"${k}"=${v}`).join(', ')||'En construcción'}
 Patrones probados: ${patronesArr.join(' | ')||'En construcción'}
+Videos previos: ${contextArr.slice(0,4).map(v=>`[${parseInt(v.views)?.toLocaleString()} views] ${(v.analysis||'').substring(0,500)}`).join('\n---\n')}
 
-Videos anteriores (contexto):
-${contextArr.slice(0,4).map(v=>`[${parseInt(v.views)?.toLocaleString()} views] ${(v.analysis||'').substring(0,500)}`).join('\n---\n')}
+${frameImages.length > 0 ? `Te mando ${frameImages.length} frames del video nuevo (1 por segundo).` : 'No se pudo procesar el video.'}
+${prevFrameImages.length > 0 ? 'También frames de videos anteriores para contexto visual.' : ''}
 
-${frameImages.length > 0 ? `Te mando ${frameImages.length} frames del video nuevo que va a filmar (1 por segundo).` : 'No se pudo procesar el video (ffmpeg no disponible).'}
-${prevFrameImages.length > 0 ? `También te mando frames de videos anteriores para que entiendas el contexto visual de su taller y estilo.` : ''}
-
-GENERÁ 3 OPCIONES DE COPY para este video específico:
-OPCIÓN_N: [nombre del enfoque]
-PATRÓN USADO: [mecanismo y por qué va a funcionar]
-COPY COMPLETO: [guión exacto basado en lo que ves en los frames]
-NOMBRES SUGERIDOS: [nombres inventados nuevos para lo que aparece en el video]
-
-Basate en lo que VES en los frames para hacer el copy específico y concreto. No genérico.`;
+GENERÁ 3 OPCIONES DE COPY basadas en lo que VES en los frames:
+OPCIÓN_N: [nombre], PATRÓN USADO: [mecanismo], COPY COMPLETO: [guión específico], NOMBRES SUGERIDOS: [nombres nuevos para lo que aparece]`;
 
   try {
     const content = [{ type: 'text', text: prompt }, ...frameImages];
-    if (prevFrameImages.length > 0) content.push({ type: 'text', text: 'Frames de videos anteriores para contexto visual:' }, ...prevFrameImages);
+    if (prevFrameImages.length > 0) content.push({ type: 'text', text: 'Frames de videos anteriores:' }, ...prevFrameImages);
     const copy = await callClaude([{ role: 'user', content }], 2000);
     res.json({ copy });
   } catch(err) { res.status(500).json({ error: err.message }); }
