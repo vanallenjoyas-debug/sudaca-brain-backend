@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '1.5.1';
+const VERSION = '1.6.0';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -29,7 +29,7 @@ async function initDB() {
     CREATE TABLE IF NOT EXISTS videos (
       id SERIAL PRIMARY KEY, url TEXT UNIQUE NOT NULL, title TEXT,
       views INTEGER DEFAULT 0, likes INTEGER DEFAULT 0, comment_count INTEGER DEFAULT 0,
-      analysis TEXT, copy_original TEXT, comments_raw TEXT,
+      analysis TEXT, copy_original TEXT, comments_raw TEXT, frames_data JSONB DEFAULT '[]',
       answers JSONB DEFAULT '[]', timestamp TIMESTAMPTZ DEFAULT NOW(), status TEXT DEFAULT 'analyzed'
     );
     CREATE TABLE IF NOT EXISTS glosario (
@@ -41,6 +41,7 @@ async function initDB() {
   `);
   await pool.query(`ALTER TABLE videos ADD COLUMN IF NOT EXISTS copy_original TEXT`).catch(()=>{});
   await pool.query(`ALTER TABLE videos ADD COLUMN IF NOT EXISTS comments_raw TEXT`).catch(()=>{});
+  await pool.query(`ALTER TABLE videos ADD COLUMN IF NOT EXISTS frames_data JSONB DEFAULT '[]'`).catch(()=>{});
   console.log('DB ready');
 }
 
@@ -183,11 +184,14 @@ Sé exhaustivo. El video se descarta tras este análisis.`;
       const audioPath = `/tmp/audio_${ts}.mp3`;
       fs.mkdirSync(framesDir, { recursive: true });
 
+      // Extract 1 frame per second, max 60 frames
       try {
-        execSync(`ffmpeg -i "${req.file.path}" -vf "fps=1/5,scale=480:-1" -frames:v 10 "${framesDir}/frame_%03d.jpg" -y 2>/dev/null`);
+        execSync(`ffmpeg -i "${req.file.path}" -vf "fps=1,scale=480:-1" -frames:v 60 "${framesDir}/frame_%03d.jpg" -y 2>/dev/null`);
         const ff = fs.readdirSync(framesDir).filter(f => f.endsWith('.jpg')).sort();
-        console.log(`Extracted ${ff.length} frames`);
+        console.log(`Extracted ${ff.length} frames at 1fps`);
         frameImages = ff.map(f => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: fs.readFileSync(path.join(framesDir, f)).toString('base64') } }));
+        // Save frames for later use
+        req.body.frames_data = JSON.stringify(frameImages.map(f => f.source.data));
         ff.forEach(f => fs.unlinkSync(path.join(framesDir, f)));
         fs.rmdirSync(framesDir);
       } catch(e) { console.log('ffmpeg frames error:', e.message); }
@@ -210,7 +214,7 @@ Sé exhaustivo. El video se descarta tras este análisis.`;
     const audioContext = audioTranscription ? `\n\nTRANSCRIPCIÓN DE AUDIO CON TIMESTAMPS:\n${audioTranscription}\n\nUsá esta transcripción para entender el ritmo, énfasis y timing exacto.\n` : '';
     const messages = [{ role: 'user', content: frameImages.length > 0 ? [{ type: 'text', text: `${frameImages.length} frames + transcripción de audio:${audioContext}\n\n${prompt}` }, ...frameImages] : prompt + audioContext }];
     const analysis = await callClaude(messages, 4000);
-    res.json({ analysis });
+    res.json({ analysis, frames_data: frameImages.map(f => f.source.data) });
   } catch (err) {
     if (req.file) try { fs.unlinkSync(req.file.path); } catch(e) {}
     res.status(500).json({ error: err.message });
@@ -246,6 +250,69 @@ NO repetir frases exactas. Replicar el MECANISMO.` }], 2000);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ---- GENERATE COPY WITH VIDEO ----
+app.post('/generate-with-video', requireAuth, upload.single('video'), async (req, res) => {
+  if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'ANTHROPIC_API_KEY no configurada' });
+  const { glosario, patrones, contextVideos } = req.body;
+
+  let glosarioObj = {}, patronesArr = [], contextArr = [];
+  try { glosarioObj = JSON.parse(glosario || '{}'); } catch(e) {}
+  try { patronesArr = JSON.parse(patrones || '[]'); } catch(e) {}
+  try { contextArr = JSON.parse(contextVideos || '[]'); } catch(e) {}
+
+  let frameImages = [];
+  if (req.file) {
+    const framesDir = `/tmp/frames_gen_${Date.now()}`;
+    fs.mkdirSync(framesDir, { recursive: true });
+    try {
+      execSync(`ffmpeg -i "${req.file.path}" -vf "fps=1,scale=480:-1" -frames:v 60 "${framesDir}/frame_%03d.jpg" -y 2>/dev/null`);
+      const ff = fs.readdirSync(framesDir).filter(f => f.endsWith('.jpg')).sort();
+      console.log(`Generate-with-video: ${ff.length} frames`);
+      frameImages = ff.map(f => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: fs.readFileSync(path.join(framesDir, f)).toString('base64') } }));
+      ff.forEach(f => fs.unlinkSync(path.join(framesDir, f)));
+      fs.rmdirSync(framesDir);
+    } catch(e) { console.log('ffmpeg error:', e.message); }
+    fs.unlinkSync(req.file.path);
+  }
+
+  // Build context from saved frames of previous videos
+  const prevFrameImages = [];
+  for (const v of contextArr.slice(0, 3)) {
+    if (v.frames_data && v.frames_data.length > 0) {
+      // Take 3 representative frames from each previous video
+      const frames = v.frames_data;
+      const picks = [0, Math.floor(frames.length/2), frames.length-1].filter(i => i < frames.length);
+      picks.forEach(i => prevFrameImages.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: frames[i] } }));
+    }
+  }
+
+  const prompt = `Sos el asistente creativo de Javier "Joyería Sudaca" Romero.
+
+Glosario: ${Object.entries(glosarioObj).map(([k,v])=>`"${k}"=${v}`).join(', ')||'En construcción'}
+Patrones probados: ${patronesArr.join(' | ')||'En construcción'}
+
+Videos anteriores (contexto):
+${contextArr.slice(0,4).map(v=>`[${parseInt(v.views)?.toLocaleString()} views] ${(v.analysis||'').substring(0,500)}`).join('\n---\n')}
+
+${frameImages.length > 0 ? `Te mando ${frameImages.length} frames del video nuevo que va a filmar (1 por segundo).` : 'No se pudo procesar el video (ffmpeg no disponible).'}
+${prevFrameImages.length > 0 ? `También te mando frames de videos anteriores para que entiendas el contexto visual de su taller y estilo.` : ''}
+
+GENERÁ 3 OPCIONES DE COPY para este video específico:
+OPCIÓN_N: [nombre del enfoque]
+PATRÓN USADO: [mecanismo y por qué va a funcionar]
+COPY COMPLETO: [guión exacto basado en lo que ves en los frames]
+NOMBRES SUGERIDOS: [nombres inventados nuevos para lo que aparece en el video]
+
+Basate en lo que VES en los frames para hacer el copy específico y concreto. No genérico.`;
+
+  try {
+    const content = [{ type: 'text', text: prompt }, ...frameImages];
+    if (prevFrameImages.length > 0) content.push({ type: 'text', text: 'Frames de videos anteriores para contexto visual:' }, ...prevFrameImages);
+    const copy = await callClaude([{ role: 'user', content }], 2000);
+    res.json({ copy });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
 // ---- IDEAS ----
 app.post('/ideas', requireAuth, async (req, res) => {
   const { videos } = req.body;
@@ -274,10 +341,10 @@ app.get('/videos', requireAuth, async (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/videos', requireAuth, async (req, res) => {
-  const { url, title, views, likes, comment_count, analysis, copy_original, comments_raw, answers } = req.body;
+  const { url, title, views, likes, comment_count, analysis, copy_original, comments_raw, frames_data, answers } = req.body;
   try {
-    const r = await pool.query(`INSERT INTO videos (url,title,views,likes,comment_count,analysis,copy_original,comments_raw,answers) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (url) DO UPDATE SET title=EXCLUDED.title,views=EXCLUDED.views,likes=EXCLUDED.likes,comment_count=EXCLUDED.comment_count,analysis=EXCLUDED.analysis,copy_original=EXCLUDED.copy_original,comments_raw=EXCLUDED.comments_raw,answers=EXCLUDED.answers,timestamp=NOW() RETURNING *`,
-      [url,title,views,likes,comment_count,analysis,copy_original,comments_raw,JSON.stringify(answers||[])]);
+    const r = await pool.query(`INSERT INTO videos (url,title,views,likes,comment_count,analysis,copy_original,comments_raw,frames_data,answers) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (url) DO UPDATE SET title=EXCLUDED.title,views=EXCLUDED.views,likes=EXCLUDED.likes,comment_count=EXCLUDED.comment_count,analysis=EXCLUDED.analysis,copy_original=EXCLUDED.copy_original,comments_raw=EXCLUDED.comments_raw,frames_data=EXCLUDED.frames_data,answers=EXCLUDED.answers,timestamp=NOW() RETURNING *`,
+      [url,title,views,likes,comment_count,analysis,copy_original,comments_raw,frames_data||'[]',JSON.stringify(answers||[])]);
     res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
