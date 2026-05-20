@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '1.7.1';
+const VERSION = '1.7.2';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -287,10 +287,17 @@ app.get('/videos', requireAuth, async (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/videos', requireAuth, async (req, res) => {
-  const { url, title, views, likes, comment_count, analysis, copy_original, comments_raw, frames_data, answers } = req.body;
+  const { url, title, views, likes, comment_count, analysis, copy_original, comments_raw, answers } = req.body;
+  let frames_data = req.body.frames_data;
+  // Normalize frames_data to valid JSON string
+  if (!frames_data) frames_data = '[]';
+  else if (Array.isArray(frames_data)) frames_data = JSON.stringify(frames_data);
+  else if (typeof frames_data === 'string') {
+    try { JSON.parse(frames_data); } catch(e) { frames_data = '[]'; }
+  }
   try {
     const r = await pool.query(`INSERT INTO videos (url,title,views,likes,comment_count,analysis,copy_original,comments_raw,frames_data,answers) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (url) DO UPDATE SET title=EXCLUDED.title,views=EXCLUDED.views,likes=EXCLUDED.likes,comment_count=EXCLUDED.comment_count,analysis=EXCLUDED.analysis,copy_original=EXCLUDED.copy_original,comments_raw=EXCLUDED.comments_raw,frames_data=EXCLUDED.frames_data,answers=EXCLUDED.answers,timestamp=NOW() RETURNING *`,
-      [url,title,views,likes,comment_count,analysis,copy_original,comments_raw,frames_data||'[]',JSON.stringify(answers||[])]);
+      [url,title,views,likes,comment_count,analysis,copy_original,comments_raw,frames_data,JSON.stringify(answers||[])]);
     res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
