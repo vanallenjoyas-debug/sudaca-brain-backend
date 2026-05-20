@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '1.7.2';
+const VERSION = '1.7.4';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -33,15 +33,17 @@ async function initDB() {
       answers JSONB DEFAULT '[]', timestamp TIMESTAMPTZ DEFAULT NOW(), status TEXT DEFAULT 'analyzed'
     );
     CREATE TABLE IF NOT EXISTS glosario (
-      id SERIAL PRIMARY KEY, key TEXT UNIQUE NOT NULL, value TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW()
+      id SERIAL PRIMARY KEY, key TEXT UNIQUE NOT NULL, value TEXT NOT NULL, video_url TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS patrones (
-      id SERIAL PRIMARY KEY, patron TEXT UNIQUE NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW()
+      id SERIAL PRIMARY KEY, patron TEXT UNIQUE NOT NULL, video_url TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
   await pool.query(`ALTER TABLE videos ADD COLUMN IF NOT EXISTS copy_original TEXT`).catch(()=>{});
   await pool.query(`ALTER TABLE videos ADD COLUMN IF NOT EXISTS comments_raw TEXT`).catch(()=>{});
   await pool.query(`ALTER TABLE videos ADD COLUMN IF NOT EXISTS frames_data JSONB DEFAULT '[]'`).catch(()=>{});
+  await pool.query(`ALTER TABLE glosario ADD COLUMN IF NOT EXISTS video_url TEXT`).catch(()=>{});
+  await pool.query(`ALTER TABLE patrones ADD COLUMN IF NOT EXISTS video_url TEXT`).catch(()=>{});
   console.log('DB ready');
 }
 
@@ -308,23 +310,33 @@ app.delete('/videos/:id', requireAuth, async (req, res) => {
 
 // ---- GLOSARIO ----
 app.get('/glosario', requireAuth, async (req, res) => {
-  try { const r=await pool.query('SELECT * FROM glosario ORDER BY created_at ASC'); const obj={}; r.rows.forEach(row=>obj[row.key]=row.value); res.json(obj); }
+  try { const r=await pool.query('SELECT * FROM glosario ORDER BY created_at ASC'); res.json(r.rows); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/glosario', requireAuth, async (req, res) => {
-  const { key, value } = req.body;
-  try { await pool.query(`INSERT INTO glosario (key,value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`,[key,value]); res.json({ok:true}); }
+  const { key, value, video_url } = req.body;
+  try { await pool.query(`INSERT INTO glosario (key,value,video_url) VALUES ($1,$2,$3) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`,[key,value,video_url||null]); res.json({ok:true}); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/glosario/:id', requireAuth, async (req, res) => {
+  try { await pool.query('DELETE FROM glosario WHERE id=$1',[req.params.id]); res.json({ok:true}); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/patrones/:id', requireAuth, async (req, res) => {
+  try { await pool.query('DELETE FROM patrones WHERE id=$1',[req.params.id]); res.json({ok:true}); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ---- PATRONES ----
 app.get('/patrones', requireAuth, async (req, res) => {
-  try { res.json((await pool.query('SELECT patron FROM patrones ORDER BY created_at ASC')).rows.map(r=>r.patron)); }
+  try { res.json((await pool.query('SELECT * FROM patrones ORDER BY created_at ASC')).rows); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/patrones', requireAuth, async (req, res) => {
-  const { patron } = req.body;
-  try { await pool.query(`INSERT INTO patrones (patron) VALUES ($1) ON CONFLICT (patron) DO NOTHING`,[patron]); res.json({ok:true}); }
+  const { patron, video_url } = req.body;
+  try { await pool.query(`INSERT INTO patrones (patron,video_url) VALUES ($1,$2) ON CONFLICT (patron) DO NOTHING`,[patron,video_url||null]); res.json({ok:true}); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
