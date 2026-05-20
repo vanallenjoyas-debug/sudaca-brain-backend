@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -142,12 +142,17 @@ S  exhaustivo y específico. El video se descarta tras este análisis.`;
 
   try {
     let frameImages = [];
+    let audioTranscription = '';
 
     if (req.file) {
-      const framesDir = `/tmp/frames_${Date.now()}`;
+      const timestamp = Date.now();
+      const framesDir = `/tmp/frames_${timestamp}`;
+      const audioPath = `/tmp/audio_${timestamp}.mp3`;
       fs.mkdirSync(framesDir, { recursive: true });
+
+      // Extract frames
       try {
-        execSync(`ffmpeg -i "${req.file.path}" -vf "fps=1/3,scale=640:-1" -frames:v 20 "${framesDir}/frame_%03d.jpg" -y 2>/dev/null`);
+        execSync(`ffmpeg -i "${req.file.path}" -vf "fps=1/5,scale=480:-1" -frames:v 10 "${framesDir}/frame_%03d.jpg" -y 2>/dev/null`);
         const frameFiles = fs.readdirSync(framesDir).filter(f => f.endsWith('.jpg')).sort();
         console.log(`Extracted ${frameFiles.length} frames`);
         frameImages = frameFiles.map(f => ({
@@ -156,15 +161,58 @@ S  exhaustivo y específico. El video se descarta tras este análisis.`;
         }));
         frameFiles.forEach(f => fs.unlinkSync(path.join(framesDir, f)));
         fs.rmdirSync(framesDir);
-      } catch(e) { console.log('ffmpeg error:', e.message); }
+      } catch(e) { console.log('ffmpeg frames error:', e.message); }
+
+      // Extract audio and transcribe with Claude
+      try {
+        execSync(`ffmpeg -i "${req.file.path}" -vn -ac 1 -ar 16000 -ab 64k "${audioPath}" -y 2>/dev/null`);
+        const audioBuffer = fs.readFileSync(audioPath);
+        const audioBase64 = audioBuffer.toString('base64');
+        console.log(`Audio extracted: ${(audioBuffer.length/1024).toFixed(0)}KB`);
+
+        const transcriptResponse = await callClaude([{
+          role: 'user',
+          content: [
+            {
+              type: 'document',
+              source: { type: 'base64', media_type: 'audio/mpeg', data: audioBase64 }
+            },
+            {
+              type: 'text',
+              text: `Transcribí este audio de un video de YouTube de un joyero argentino llamado Javier "Joyería Sudaca". 
+              
+Transcribí exactamente lo que dice, incluyendo:
+- Timestamps aproximados cada frase [0:00] [0:05] etc
+- El tono y énfasis cuando sea notable (mayúsculas para énfasis fuerte)
+- Pausas significativas con [pausa]
+- Risas o sonidos relevantes entre corchetes
+- Errores o dudas tal como salen
+
+Devolvé solo la transcripción, sin comentarios adicionales.`
+            }
+          ]
+        }], 2000);
+
+        audioTranscription = transcriptResponse;
+        console.log('Audio transcribed successfully');
+        fs.unlinkSync(audioPath);
+      } catch(e) {
+        console.log('Audio transcription error:', e.message);
+        try { fs.unlinkSync(audioPath); } catch(e2) {}
+      }
+
       fs.unlinkSync(req.file.path);
     }
+
+    const audioContext = audioTranscription
+      ? `\n\nTRANSCRIPCIÓN DE AUDIO CON TIMESTAMPS:\n${audioTranscription}\n\nUsá esta transcripción para entender el ritmo, énfasis, timing exacto de los chistes y cómo construye el humor.\n`
+      : '';
 
     const messages = [{
       role: 'user',
       content: frameImages.length > 0
-        ? [{ type: 'text', text: `${frameImages.length} frames del video (1 cada 3 segundos, en orden cronológico):\n\n${prompt}` }, ...frameImages]
-        : prompt
+        ? [{ type: 'text', text: `${frameImages.length} frames del video (orden cronológico) + transcripción de audio:${audioContext}\n\n${prompt}` }, ...frameImages]
+        : prompt + audioContext
     }];
 
     const analysis = await callClaude(messages, 4000);
