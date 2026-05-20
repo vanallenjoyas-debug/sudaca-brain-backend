@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '1.6.1';
+const VERSION = '1.6.2';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -91,14 +91,14 @@ app.post('/analyze-audio', requireAuth, upload.single('video'), async (req, res)
   console.log(`[v${VERSION}] /analyze-audio - file: ${req.file ? req.file.size + ' bytes' : 'NO FILE'}`);
   if (!req.file) return res.status(400).json({ error: 'No se recibió el video' });
 
-  const audioPath = `/tmp/audio_${Date.now()}.mp3`;
+  const audioPath = `/tmp/audio_${Date.now()}.wav`;
   try {
-    execSync(`ffmpeg -i "${req.file.path}" -vn -ac 1 -ar 16000 -ab 64k "${audioPath}" -y 2>/dev/null`);
+    execSync(`ffmpeg -y -i "${req.file.path}" -vn -ac 1 -ar 16000 "${audioPath}" 2>&1`);
     const audioBuffer = fs.readFileSync(audioPath);
     console.log(`Audio extracted: ${(audioBuffer.length/1024).toFixed(0)}KB`);
 
     const transcription = await callClaude([{ role: 'user', content: [
-      { type: 'document', source: { type: 'base64', media_type: 'audio/mpeg', data: audioBuffer.toString('base64') } },
+      { type: 'document', source: { type: 'base64', media_type: 'audio/wav', data: audioBuffer.toString('base64') } },
       { type: 'text', text: `Transcribí este audio de un video de YouTube de un joyero argentino llamado Javier "Joyería Sudaca". Incluí timestamps aproximados [0:00], tono y énfasis (mayúsculas para énfasis fuerte), pausas [pausa], risas o sonidos relevantes. Solo la transcripción, sin comentarios.` }
     ]}], 2000);
 
@@ -181,7 +181,7 @@ Sé exhaustivo. El video se descarta tras este análisis.`;
     if (req.file) {
       const ts = Date.now();
       const framesDir = `/tmp/frames_${ts}`;
-      const audioPath = `/tmp/audio_${ts}.mp3`;
+      const audioPath = `/tmp/audio_${ts}.wav`;
       fs.mkdirSync(framesDir, { recursive: true });
 
       // Extract 1 frame per second, max 60 frames
@@ -197,11 +197,11 @@ Sé exhaustivo. El video se descarta tras este análisis.`;
       } catch(e) { console.log('ffmpeg frames error:', e.message); }
 
       try {
-        execSync(`ffmpeg -i "${req.file.path}" -vn -ac 1 -ar 16000 -ab 64k "${audioPath}" -y 2>/dev/null`);
+        execSync(`ffmpeg -y -i "${req.file.path}" -vn -ac 1 -ar 16000 "${audioPath}" 2>&1`);
         const audioBuffer = fs.readFileSync(audioPath);
         console.log(`Audio extracted: ${(audioBuffer.length/1024).toFixed(0)}KB`);
         audioTranscription = await callClaude([{ role: 'user', content: [
-          { type: 'document', source: { type: 'base64', media_type: 'audio/mpeg', data: audioBuffer.toString('base64') } },
+          { type: 'document', source: { type: 'base64', media_type: 'audio/wav', data: audioBuffer.toString('base64') } },
           { type: 'text', text: `Transcribí este audio de un video de YouTube de un joyero argentino llamado Javier "Joyería Sudaca". Incluí timestamps aproximados [0:00], tono y énfasis (mayúsculas para énfasis fuerte), pausas [pausa], risas o sonidos relevantes. Solo la transcripción, sin comentarios.` }
         ]}], 2000);
         console.log('Audio transcribed');
