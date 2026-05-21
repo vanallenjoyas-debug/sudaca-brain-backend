@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '1.8.3';
+const VERSION = '1.8.4';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -219,10 +219,18 @@ app.post('/generate', requireAuth, async (req, res) => {
 
 Tu objetivo es generar guiones en su estilo, no repetir lo que ya hizo.
 
-CÓMO USAR EL GLOSARIO Y PATRONES:
-- El glosario muestra su LÓGICA CREATIVA: ácido nítrico → "bebida de los pueblos nobles" (químico peligroso = bebida aristocrática)
-- Usá esa lógica como inspiración — a veces repetir un nombre funciona, a veces inventar uno nuevo, a veces usar el nombre técnico real por contraste. No hay regla fija, es orgánico como Javier
-- Los patrones muestran MECANISMOS narrativos — usá el mecanismo, no la frase
+REGLA FUNDAMENTAL:
+NO uses frases, nombres o expresiones que aparezcan en los copys anteriores o en el glosario.
+Si estás a punto de escribir algo que Javier ya dijo, cambialo por algo nuevo con la misma lógica.
+
+La LÓGICA de Javier:
+- Toma algo técnico/peligroso/serio y lo nombra con algo cotidiano, doméstico o absurdo
+- Usa resignación activa: acepta lo malo del proceso como si fuera normal
+- Genera anticlímax: construye expectativa y remata con algo mundano o personal
+- Habla directo a cámara con complicidad, no para arriba
+- El humor sale del contraste entre su expertise real y cómo lo nombra
+
+Aplicá esa lógica para generar frases NUEVAS que suenen a él sin repetir lo que ya dijo.
 
 Glosario (para entender su lógica, no para copiar): ${Object.entries(glosario||{}).map(([k,v])=>`"${k}"=${v}`).join(', ')||'En construcción'}
 Patrones probados: ${(patrones||[]).join(' | ')||'En construcción'}
