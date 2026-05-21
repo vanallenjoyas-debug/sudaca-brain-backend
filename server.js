@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '1.9.1';
+const VERSION = '1.9.2';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -233,10 +233,7 @@ app.post('/generate', requireAuth, async (req, res) => {
   const { description, glosario, patrones, contextVideos } = req.body;
   try {
     const copysReales = (contextVideos||[]).filter(v=>v.copy_original).slice(-8)
-      .map(v=>`[${parseInt(v.views)?.toLocaleString()||'?'} views] ${v.title||''}:
-${v.copy_original}`).join('
----
-');
+      .map(v=>`[${parseInt(v.views)?.toLocaleString()||'?'} views] ${v.title||''}:\n${v.copy_original}`).join('\n---\n');
     const glosarioStr = Object.entries(glosario||{}).slice(0,10).map(([k,v])=>`"${k}" = ${v}`).join(', ');
     const prompt = `Sos el asistente creativo de Javier Romero, joyero argentino "Joyería Sudaca" (~170K seguidores). Escribís guiones para sus Shorts de 30-45 segundos (60-90 palabras máximo).
 
