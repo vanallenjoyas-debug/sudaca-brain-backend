@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '2.0.8';
+const VERSION = '2.0.9';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -232,6 +232,18 @@ app.post('/generate', requireAuth, async (req, res) => {
     const copysReales = (contextVideos||[]).filter(v=>v.copy_original).slice(-8).map(v=>`[${parseInt(v.views)?.toLocaleString()||'?'} views] ${v.title||''}:\n${v.copy_original}`).join('\n---\n');
     const glosarioStr = Object.entries(glosario||{}).slice(0,10).map(([k,v])=>`"${k}" = ${v}`).join(', ');
     const prompt = `Sos el asistente creativo de Javier Romero, joyero argentino "Joyería Sudaca" (~170K seguidores). Escribís guiones para sus Shorts de 45-60 segundos (120-150 palabras).\n\nCÓMO HABLA JAVIER — leé sus guiones reales y aprendé su voz:\n${copysReales || 'Sin copys disponibles'}\n\nSU LÓGICA:\n- Habla como un joyero cansado con humor seco y resignación activa\n- Anticlímax: expectativa → remate mundano o personal\n- Frases cortas, ritmo irregular, como si pensara en voz alta\n- Expertise real disfrazado de ignorancia o desinterés\n- Inventa nombres domésticos para cosas técnicas (referencia del glosario: ${glosarioStr||'en construcción'})\n- NO copiar sus frases — inventá nuevas con la misma lógica\n- NO metáforas elaboradas, NO sonar a marketing\n\nVIDEO A GUIONAR: ${description}\n\nGenerá 3 opciones con enfoques distintos. Entre 120 y 150 palabras cada una. Separalas con "---". Solo el guión.`;
+    const copy = await callGemini(prompt);
+    res.json({ copy });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ---- GENERATE GEMINI MODE ----
+app.post('/generate-gemini', requireAuth, async (req, res) => {
+  const { description, glosario, patrones, contextVideos } = req.body;
+  try {
+    const copysReales = (contextVideos||[]).filter(v=>v.copy_original).slice(-8).map(v=>v.copy_original).join('\n---\n');
+    const glosarioStr = Object.entries(glosario||{}).slice(0,15).map(([k,v])=>`"${k}" = ${v}`).join(', ');
+    const prompt = `Sos el asistente creativo de Javier Romero, joyero argentino "Joyería Sudaca" (~170K seguidores). Tu tarea es escribir guiones para sus Shorts de YouTube. LONGITUD ESTRICTA: Máximo 90 palabras (para un video de 30-40 segundos). Frases cortas.\n\nCÓMO HABLA JAVIER — leé sus últimos guiones reales para entender por dónde viene grabando:\n${copysReales || 'Sin copys disponibles'}\n\nSU LÓGICA:\n* Habla como un joyero cansado que acepta su destino con humor seco y resignación activa.\n* Anticlímax: construye expectativa técnica y remata con algo mundano.\n* Expertise real disfrazado de ignorancia o desinterés.\n* NO usa metáforas poéticas, NO suena a marketing.\n\nLÓGICA PARA INVENTAR TÉRMINOS (REGLA DE ORO): Toma algo técnico, químico o peligroso del taller y lo nombra con algo cotidiano o absurdo. (Ej: ácido nítrico = "bebida de los pueblos nobles", bórax = "lágrimas de ángel"). Usá el glosario conocido: ${glosarioStr||'en construcción'}. Si el material no está en el glosario, INVENTÁ un término nuevo usando esta misma lógica de contraste absurdo.\n\nVIDEO A GUIONAR: ${description}\n\nGenerá 3 opciones con enfoques distintos. Separalas con "---". Solo el guión, sin explicaciones.`;
     const copy = await callGemini(prompt);
     res.json({ copy });
   } catch (err) { res.status(500).json({ error: err.message }); }
