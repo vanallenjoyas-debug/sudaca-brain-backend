@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '1.9.2';
+const VERSION = '1.9.3';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -262,9 +262,7 @@ app.post('/generate-simple', requireAuth, async (req, res) => {
   const { description, glosario, patrones, contextVideos } = req.body;
   try {
     const copysReales = (contextVideos||[]).filter(v=>v.copy_original).slice(-5)
-      .map(v=>`${v.copy_original}`).join('
----
-');
+      .map(v=>`${v.copy_original}`).join('\n---\n');
     const prompt = `Sos el asistente creativo de Javier Romero, joyero argentino "Joyería Sudaca".
 
 Sus guiones reales (aprendé su voz):
