@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '1.7.6';
+const VERSION = '1.7.7';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -110,7 +110,9 @@ SOBRE LA ESPONTANEIDAD — MUY IMPORTANTE:
 - El 95% de lo que dice Javier es COMPLETAMENTE ESPONTÁNEO: nombres inventados, comparaciones, humor, remates
 - Lo que es PREMEDITADO son las frases que se REPITEN entre videos (ej: "porque esto es joyería sudaca papá", frases del glosario conocido)
 - Para identificar si algo es premeditado: buscalo en el glosario y patrones previos. Si está ahí, es recurrente y posiblemente deliberado. Si no está, es espontáneo
-- NUNCA preguntes "¿fue espontáneo o planificado?" — la respuesta siempre es espontáneo salvo que esté en el glosario/patrones
+- NUNCA preguntes si algo fue espontáneo, planificado, premeditado, o si "tenía la idea desde antes" — la respuesta siempre es espontáneo
+- NUNCA preguntes sobre el origen de un chiste, frase o comparación — todos surgen en el momento
+- Solo preguntá sobre HECHOS VERIFICABLES que no podés saber: qué químico usó exactamente, si un accidente fue real, qué objeto es el que aparece en pantalla
 
 ${glosarioStr}
 Patrones previos: ${patronesArr.join(', ') || 'ninguno aún'}
