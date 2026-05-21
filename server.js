@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '1.9.4';
+const VERSION = '2.0.0';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -66,10 +66,7 @@ const callGemini = async (prompt) => {
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${GEMINI_KEY}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.9, maxOutputTokens: 2048 }
-    })
+    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.9, maxOutputTokens: 2048 } })
   });
   const data = await response.json();
   if (data.error) throw new Error(data.error.message);
@@ -232,48 +229,192 @@ app.post('/refine', requireAuth, async (req, res) => {
 app.post('/generate', requireAuth, async (req, res) => {
   const { description, glosario, patrones, contextVideos } = req.body;
   try {
-    const copysReales = (contextVideos||[]).filter(v=>v.copy_original).slice(-8)
-      .map(v=>`[${parseInt(v.views)?.toLocaleString()||'?'} views] ${v.title||''}:\n${v.copy_original}`).join('\n---\n');
+    const copysReales = (contextVideos||[]).filter(v=>v.copy_original).slice(-8).map(v=>`[${parseInt(v.views)?.toLocaleString()||'?'} views] ${v.title||''}:\n${v.copy_original}`).join('\n---\n');
     const glosarioStr = Object.entries(glosario||{}).slice(0,10).map(([k,v])=>`"${k}" = ${v}`).join(', ');
+    const prompt = `Sos el asistente creativo de Javier Romero, joyero argentino "Joyería Sudaca" (~170K seguidores). Escribís guiones para sus Shorts de 30-45 segundos (60-90 palabras máximo).\n\nCÓMO HABLA JAVIER — leé sus guiones reales y aprendé su voz:\n${copysReales || 'Sin copys disponibles'}\n\nSU LÓGICA:\n- Habla como un joyero cansado con humor seco y resignación activa\n- Anticlímax: expectativa → remate mundano o personal\n- Frases cortas, ritmo irregular, como si pensara en voz alta\n- Expertise real disfrazado de ignorancia o desinterés\n- Inventa nombres domésticos para cosas técnicas (referencia del glosario: ${glosarioStr||'en construcción'})\n- NO copiar sus frases — inventá nuevas con la misma lógica\n- NO metáforas elaboradas, NO sonar a marketing\n\nVIDEO A GUIONAR: ${description}\n\nGenerá 3 opciones con enfoques distintos. Máximo 90 palabras cada una. Separalas con "---". Solo el guión.`;
+    const copy = await callGemini(prompt);
+    res.json({ copy });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ---- GENERATE SIMPLE ----
+app.post('/generate-simple', requireAuth, async (req, res) => {
+  const { description, glosario, patrones, contextVideos } = req.body;
+  try {
+    const copysReales = (contextVideos||[]).filter(v=>v.copy_original).slice(-8).map(v=>`[${parseInt(v.views)?.toLocaleString()||'?'} views]\n${v.copy_original}`).join('\n---\n');
+    const glosarioStr = Object.entries(glosario||{}).slice(0,10).map(([k,v])=>`"${k}" = ${v}`).join(', ');
+
     const prompt = `Sos el asistente creativo de Javier Romero, joyero argentino "Joyería Sudaca" (~170K seguidores). Escribís guiones para sus Shorts de 30-45 segundos (60-90 palabras máximo).
 
-CÓMO HABLA JAVIER — leé sus guiones reales y aprendé su voz:
-${copysReales || 'Sin copys disponibles'}
+CÓMO HABLA JAVIER — leé estos guiones reales suyos y aprendé su voz:
+${copysReales || 'Sin copys disponibles aún'}
 
 SU LÓGICA:
-- Habla como un joyero cansado con humor seco y resignación activa
+- Habla como un joyero cansado con humor seco
+- Resignación activa: acepta lo malo como si fuera normal
 - Anticlímax: expectativa → remate mundano o personal
-- Frases cortas, ritmo irregular, como si pensara en voz alta
+- Frases cortas, ritmo irregular, piensa en voz alta
 - Expertise real disfrazado de ignorancia o desinterés
-- Inventa nombres domésticos para cosas técnicas (referencia del glosario: ${glosarioStr||'en construcción'})
-- NO copiar sus frases existentes — inventá frases nuevas con la misma lógica
+- Inventa nombres domésticos para cosas técnicas (ejemplos del glosario: ${glosarioStr||'en construcción'})
 - NO metáforas elaboradas, NO sonar a marketing
 
 VIDEO A GUIONAR: ${description}
 
-Generá 3 opciones con enfoques completamente distintos. Máximo 90 palabras cada una. Separalas con "---". Solo el guión, sin etiquetas ni explicaciones extra.`;
+Generá 3 opciones de guión con enfoques distintos. Máximo 90 palabras cada uno. Sin etiquetas ni explicaciones — solo el guión.`;
+
     const copy = await callGemini(prompt);
     res.json({ copy });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
+app.post('/generate-with-video', requireAuth, upload.single('video'), async (req, res) => {
+  if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'ANTHROPIC_API_KEY no configurada' });
+  const { glosario, patrones, contextVideos } = req.body;
+  let glosarioObj = {}, patronesArr = [], contextArr = [];
+  try { glosarioObj = JSON.parse(glosario || '{}'); } catch(e) {}
+  try { patronesArr = JSON.parse(patrones || '[]'); } catch(e) {}
+  try { contextArr = JSON.parse(contextVideos || '[]'); } catch(e) {}
 
-// ---- GENERATE SIMPLE (Gemini) ----
-app.post('/generate-simple', requireAuth, async (req, res) => {
-  const { description, glosario, patrones, contextVideos } = req.body;
+  let frameImages = [];
+  if (req.file) {
+    const framesDir = `/tmp/frames_gen_${Date.now()}`;
+    fs.mkdirSync(framesDir, { recursive: true });
+    try {
+      execSync(`ffmpeg -i "${req.file.path}" -vf "fps=1,scale=480:-1" -frames:v 60 "${framesDir}/frame_%03d.jpg" -y 2>/dev/null`);
+      const ff = fs.readdirSync(framesDir).filter(f => f.endsWith('.jpg')).sort();
+      frameImages = ff.map(f => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: fs.readFileSync(path.join(framesDir, f)).toString('base64') } }));
+      ff.forEach(f => fs.unlinkSync(path.join(framesDir, f)));
+      fs.rmdirSync(framesDir);
+    } catch(e) { console.log('ffmpeg error:', e.message); }
+    fs.unlinkSync(req.file.path);
+  }
+
+  const prevFrameImages = [];
+  for (const v of contextArr.slice(0, 3)) {
+    if (v.frames_data?.length > 0) {
+      const frames = v.frames_data;
+      [0, Math.floor(frames.length/2), frames.length-1].filter(i => i < frames.length).forEach(i =>
+        prevFrameImages.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: frames[i] } })
+      );
+    }
+  }
+
+  const prompt = `Sos el asistente creativo de Javier "Joyería Sudaca" Romero.
+
+Tu objetivo es generar guiones en su estilo, no repetir lo que ya hizo.
+
+CÓMO USAR EL GLOSARIO Y PATRONES:
+- El glosario muestra su LÓGICA CREATIVA — usala para inventar nombres NUEVOS para lo que ves en los frames
+- A veces repetir un nombre del glosario funciona, a veces inventar uno nuevo, a veces usar el nombre técnico real. Es orgánico
+- Los patrones son MECANISMOS — aplicá el mecanismo, no la frase
+
+Glosario (lógica creativa, no copiar): ${Object.entries(glosarioObj).map(([k,v])=>`"${k}"=${v}`).join(', ')||'En construcción'}
+Patrones: ${patronesArr.join(' | ')||'En construcción'}
+Videos previos (referencia de estilo): ${contextArr.slice(0,4).map(v=>`[${parseInt(v.views)?.toLocaleString()} views] ${(v.analysis||'').substring(0,500)}`).join('\n---\n')}
+
+${frameImages.length > 0 ? `Te mando ${frameImages.length} frames del video nuevo (1 por segundo). Basate en lo que VES para hacer el copy específico.` : 'No se pudo procesar el video.'}
+${prevFrameImages.length > 0 ? 'También frames de videos anteriores para entender el estilo visual.' : ''}
+
+LONGITUD CRÍTICA: Los videos de Javier duran 30-45 segundos. El copy tiene que ser de 80-120 palabras máximo. Contá las palabras antes de entregar. Si superás 120 palabras, recortá.
+
+GENERÁ 3 OPCIONES DE COPY completamente distintas:
+OPCIÓN_N: [nombre del enfoque]
+PATRÓN USADO: [mecanismo narrativo]
+COPY COMPLETO: [guión listo para usar, en voz de Javier — MÁXIMO 120 PALABRAS]
+NOMBRES NUEVOS: [nombres inventados para los materiales si aplica]`;
+
   try {
-    const copysReales = (contextVideos||[]).filter(v=>v.copy_original).slice(-5)
-      .map(v=>`${v.copy_original}`).join('\n---\n');
-    const prompt = `Sos el asistente creativo de Javier Romero, joyero argentino "Joyería Sudaca".
-
-Sus guiones reales (aprendé su voz):
-${copysReales || 'Sin copys disponibles'}
-
-VIDEO: ${description}
-
-3 opciones de guión, 60-90 palabras cada una, estilo de Javier. Separalas con "---".`;
-    const copy = await callGemini(prompt);
+    const content = [{ type: 'text', text: prompt }, ...frameImages];
+    if (prevFrameImages.length > 0) content.push({ type: 'text', text: 'Frames de videos anteriores:' }, ...prevFrameImages);
+    const copy = await callClaude([{ role: 'user', content }], 2000, 'claude-opus-4-5');
     res.json({ copy });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// ---- IDEAS ----
+app.post('/ideas', requireAuth, async (req, res) => {
+  const { videos } = req.body;
+  if (!videos?.length) return res.status(400).json({ error: 'No hay videos' });
+  try {
+    const ideas = await callClaude([{ role: 'user', content: `Sos el estratega de contenido de Javier "Joyería Sudaca".
+
+COMENTARIOS:
+${videos.map(v=>`VIDEO: ${v.title}\n${v.comments_raw||''}`).join('\n\n---\n\n')}
+
+ANÁLISIS PREVIOS:
+${videos.map(v=>v.analysis||'').join('\n\n---\n\n').substring(0,3000)}
+
+GENERÁ:
+## PEDIDOS RECURRENTES DE LA AUDIENCIA
+## IDEAS DE CONTENIDO BASADAS EN COMENTARIOS (10 ideas con IDEA, BASADA EN, GANCHO SUGERIDO, POTENCIAL)
+## TEMAS QUE LA AUDIENCIA QUIERE VER MÁS
+## FORMATOS QUE GENERAN MÁS REACCIÓN` }], 3000);
+    res.json({ ideas });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ---- VIDEOS ----
+app.get('/videos', requireAuth, async (req, res) => {
+  try { res.json((await pool.query('SELECT * FROM videos ORDER BY views DESC')).rows); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/videos', requireAuth, async (req, res) => {
+  const { url, title, views, likes, comment_count, analysis, copy_original, comments_raw, answers } = req.body;
+  let frames_data = req.body.frames_data;
+  // Normalize frames_data to valid JSON string
+  if (!frames_data) frames_data = '[]';
+  else if (Array.isArray(frames_data)) frames_data = JSON.stringify(frames_data);
+  else if (typeof frames_data === 'string') {
+    try { JSON.parse(frames_data); } catch(e) { frames_data = '[]'; }
+  }
+  try {
+    const r = await pool.query(`INSERT INTO videos (url,title,views,likes,comment_count,analysis,copy_original,comments_raw,frames_data,answers) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (url) DO UPDATE SET title=EXCLUDED.title,views=EXCLUDED.views,likes=EXCLUDED.likes,comment_count=EXCLUDED.comment_count,analysis=EXCLUDED.analysis,copy_original=EXCLUDED.copy_original,comments_raw=EXCLUDED.comments_raw,frames_data=EXCLUDED.frames_data,answers=EXCLUDED.answers,timestamp=NOW() RETURNING *`,
+      [url,title,views,likes,comment_count,analysis,copy_original,comments_raw,frames_data,JSON.stringify(answers||[])]);
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/videos/:id', requireAuth, async (req, res) => {
+  try { await pool.query('DELETE FROM videos WHERE id=$1',[req.params.id]); res.json({ok:true}); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
 
+// ---- GLOSARIO ----
+app.get('/glosario', requireAuth, async (req, res) => {
+  try { const r=await pool.query('SELECT * FROM glosario ORDER BY created_at ASC'); res.json(r.rows); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/glosario', requireAuth, async (req, res) => {
+  const { key, value, video_url } = req.body;
+  try { await pool.query(`INSERT INTO glosario (key,value,video_url) VALUES ($1,$2,$3) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`,[key,value,video_url||null]); res.json({ok:true}); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/glosario/:id', requireAuth, async (req, res) => {
+  try { await pool.query('DELETE FROM glosario WHERE id=$1',[req.params.id]); res.json({ok:true}); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/patrones/:id', requireAuth, async (req, res) => {
+  try { await pool.query('DELETE FROM patrones WHERE id=$1',[req.params.id]); res.json({ok:true}); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ---- PATRONES ----
+app.get('/patrones', requireAuth, async (req, res) => {
+  try { res.json((await pool.query('SELECT * FROM patrones ORDER BY created_at ASC')).rows); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/patrones', requireAuth, async (req, res) => {
+  const { patron, video_url } = req.body;
+  try { await pool.query(`INSERT INTO patrones (patron,video_url) VALUES ($1,$2) ON CONFLICT (patron) DO NOTHING`,[patron,video_url||null]); res.json({ok:true}); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ---- STATS ----
+app.get('/stats', requireAuth, async (req, res) => {
+  try {
+    const [v,g,p] = await Promise.all([pool.query('SELECT COUNT(*) FROM videos'),pool.query('SELECT COUNT(*) FROM glosario'),pool.query('SELECT COUNT(*) FROM patrones')]);
+    res.json({ videos:parseInt(v.rows[0].count), glosario:parseInt(g.rows[0].count), patrones:parseInt(p.rows[0].count) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+initDB().then(() => app.listen(PORT, () => console.log(`Sudaca Brain v${VERSION} running on port ${PORT}`)));
