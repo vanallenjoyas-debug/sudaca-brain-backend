@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '1.7.7';
+const VERSION = '1.7.8';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -152,10 +152,25 @@ Formato: TÉRMINO_USADO → qué es realmente
 Recursos con potencial de replicarse y por qué funcionaron.
 
 ## PREGUNTAS PARA JAVIER
-Solo preguntas genuinamente importantes.
+TU OBJETIVO ES GENERAR GUIONES Y COPYS para Javier, no aprender joyería ni química.
+Por lo tanto las preguntas deben ser SOLO sobre comunicación, narrativa y humor — nunca sobre técnica de taller.
+
+PREGUNTAS PERMITIDAS (ejemplos):
+- Qué nombre usó para X en el video (si no está claro en el copy)
+- Si un accidente visible fue real o actuado
+- Qué objeto específico aparece en pantalla y no se menciona
+
+PREGUNTAS PROHIBIDAS:
+- Cualquier pregunta sobre procesos químicos o técnicos de joyería
+- Cualquier pregunta sobre cantidades, tiempos, materiales exactos
+- Cualquier pregunta sobre si algo fue espontáneo o planificado
+- Cualquier pregunta cuya respuesta no impacte directamente en cómo escribir un guión
+
+Antes de hacer cada pregunta preguntate: ¿saber esto me ayuda a escribir un guión mejor? Si la respuesta es no, no preguntes.
+Si no hay preguntas realmente útiles para el guión, no hagas ninguna.
 Formato: PREGUNTA_N: [pregunta concreta]
 
-S  exhaustivo. El video se descarta tras este análisis.`;
+Sé exhaustivo. El video se descarta tras este análisis.`;
 
   try {
     let frameImages = [];
