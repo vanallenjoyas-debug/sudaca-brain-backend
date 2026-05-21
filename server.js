@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '2.1.4';
+const VERSION = '2.1.5';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -35,8 +35,8 @@ async function initDB() {
     CREATE TABLE IF NOT EXISTS glosario (
       id SERIAL PRIMARY KEY, key TEXT UNIQUE NOT NULL, value TEXT NOT NULL, video_url TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
     );
-    CREATE TABLE IF NOT EXISTS patrones (
-      id SERIAL PRIMARY KEY, patron TEXT UNIQUE NOT NULL, video_url TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+    CREATE TABLE IF NOT EXISTS frases_aprobadas (
+      id SERIAL PRIMARY KEY, proceso TEXT NOT NULL, frase TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
   await pool.query(`ALTER TABLE videos ADD COLUMN IF NOT EXISTS copy_original TEXT`).catch(()=>{});
@@ -44,6 +44,7 @@ async function initDB() {
   await pool.query(`ALTER TABLE videos ADD COLUMN IF NOT EXISTS frames_data JSONB DEFAULT '[]'`).catch(()=>{});
   await pool.query(`ALTER TABLE glosario ADD COLUMN IF NOT EXISTS video_url TEXT`).catch(()=>{});
   await pool.query(`ALTER TABLE patrones ADD COLUMN IF NOT EXISTS video_url TEXT`).catch(()=>{});
+  await pool.query(`CREATE TABLE IF NOT EXISTS frases_aprobadas (id SERIAL PRIMARY KEY, proceso TEXT NOT NULL, frase TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW())`).catch(()=>{});
   console.log('DB ready');
 }
 
@@ -428,6 +429,21 @@ app.get('/patrones', requireAuth, async (req, res) => {
 app.post('/patrones', requireAuth, async (req, res) => {
   const { patron, video_url } = req.body;
   try { await pool.query(`INSERT INTO patrones (patron,video_url) VALUES ($1,$2) ON CONFLICT (patron) DO NOTHING`,[patron,video_url||null]); res.json({ok:true}); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ---- FRASES APROBADAS ----
+app.get('/frases-aprobadas', requireAuth, async (req, res) => {
+  try { res.json((await pool.query('SELECT * FROM frases_aprobadas ORDER BY proceso ASC, created_at DESC')).rows); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/frases-aprobadas', requireAuth, async (req, res) => {
+  const { proceso, frase } = req.body;
+  try { const r = await pool.query('INSERT INTO frases_aprobadas (proceso,frase) VALUES ($1,$2) RETURNING *',[proceso,frase]); res.json(r.rows[0]); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/frases-aprobadas/:id', requireAuth, async (req, res) => {
+  try { await pool.query('DELETE FROM frases_aprobadas WHERE id=$1',[req.params.id]); res.json({ok:true}); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
