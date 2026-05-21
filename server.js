@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '1.8.1';
+const VERSION = '1.8.2';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -226,7 +226,12 @@ CÓMO USAR EL GLOSARIO Y PATRONES:
 
 Glosario (para entender su lógica, no para copiar): ${Object.entries(glosario||{}).map(([k,v])=>`"${k}"=${v}`).join(', ')||'En construcción'}
 Patrones probados: ${(patrones||[]).join(' | ')||'En construcción'}
-Videos previos (para entender su estilo, no para repetir): ${(contextVideos||[]).slice(-4).map(v=>`[${parseInt(v.views)?.toLocaleString()} views] ${(v.analysis||'').substring(0,600)}`).join('\n---\n')}
+
+COPYS REALES DE JAVIER (estudiá su ritmo, sus cortes, su voz — así habla él):
+${(contextVideos||[]).filter(v=>v.copy_original).slice(-6).map(v=>`[${parseInt(v.views)?.toLocaleString()||'?'} views] ${v.title||''}:
+"${(v.copy_original||'').substring(0,400)}"`).join('\n---\n')||'Sin copys disponibles aún'}
+
+Análisis adicional (contexto): ${(contextVideos||[]).slice(-3).map(v=>`${(v.analysis||'').substring(0,200)}`).join('\n---\n')}
 
 NUEVO VIDEO: ${description}
 Momento: ${momento}, Tono: ${tono}
