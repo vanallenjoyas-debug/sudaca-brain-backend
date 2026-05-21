@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '1.7.8';
+const VERSION = '1.8.0';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -217,16 +217,27 @@ app.post('/generate', requireAuth, async (req, res) => {
   try {
     const copy = await callClaude([{ role: 'user', content: `Sos el asistente creativo de Javier "Joyería Sudaca" Romero.
 
-Glosario: ${Object.entries(glosario||{}).map(([k,v])=>`"${k}"=${v}`).join(', ')||'En construcción'}
+Tu objetivo es generar guiones en su estilo, no repetir lo que ya hizo.
+
+CÓMO USAR EL GLOSARIO Y PATRONES:
+- El glosario muestra su LÓGICA CREATIVA: ácido nítrico → "bebida de los pueblos nobles" (químico peligroso = bebida aristocrática)
+- Usá esa lógica como inspiración — a veces repetir un nombre funciona, a veces inventar uno nuevo, a veces usar el nombre técnico real por contraste. No hay regla fija, es orgánico como Javier
+- Los patrones muestran MECANISMOS narrativos — usá el mecanismo, no la frase
+
+Glosario (para entender su lógica, no para copiar): ${Object.entries(glosario||{}).map(([k,v])=>`"${k}"=${v}`).join(', ')||'En construcción'}
 Patrones probados: ${(patrones||[]).join(' | ')||'En construcción'}
-Videos previos: ${(contextVideos||[]).slice(-4).map(v=>`[${parseInt(v.views)?.toLocaleString()} views] ${(v.analysis||'').substring(0,600)}`).join('\n---\n')}
+Videos previos (para entender su estilo, no para repetir): ${(contextVideos||[]).slice(-4).map(v=>`[${parseInt(v.views)?.toLocaleString()} views] ${(v.analysis||'').substring(0,600)}`).join('\n---\n')}
 
 NUEVO VIDEO: ${description}
 Momento: ${momento}, Tono: ${tono}
 
-GENERÁ 3 OPCIONES DE COPY:
-OPCIÓN_N: [nombre], PATRÓN USADO: [mecanismo], COPY COMPLETO: [guión], NOMBRES SUGERIDOS: [variantes nuevas]
-NO repetir frases exactas. Replicar el MECANISMO.` }], 2000);
+GENERÁ 3 OPCIONES DE COPY completamente distintas en enfoque:
+OPCIÓN_N: [nombre del enfoque]
+PATRÓN USADO: [qué mecanismo narrativo aplica]
+COPY COMPLETO: [guión listo para usar, en voz de Javier]
+NOMBRES NUEVOS SUGERIDOS: [nombres inventados frescos para los materiales de ESTE video específico, nunca usados antes]
+
+El copy tiene que sonar como Javier habla — sarcástico, doméstico, con expertise técnico disfrazado de ignorancia. No como un manual.` }], 2000);
     res.json({ copy });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -266,15 +277,25 @@ app.post('/generate-with-video', requireAuth, upload.single('video'), async (req
 
   const prompt = `Sos el asistente creativo de Javier "Joyería Sudaca" Romero.
 
-Glosario: ${Object.entries(glosarioObj).map(([k,v])=>`"${k}"=${v}`).join(', ')||'En construcción'}
-Patrones probados: ${patronesArr.join(' | ')||'En construcción'}
-Videos previos: ${contextArr.slice(0,4).map(v=>`[${parseInt(v.views)?.toLocaleString()} views] ${(v.analysis||'').substring(0,500)}`).join('\n---\n')}
+Tu objetivo es generar guiones en su estilo, no repetir lo que ya hizo.
 
-${frameImages.length > 0 ? `Te mando ${frameImages.length} frames del video nuevo (1 por segundo).` : 'No se pudo procesar el video.'}
-${prevFrameImages.length > 0 ? 'También frames de videos anteriores para contexto visual.' : ''}
+CÓMO USAR EL GLOSARIO Y PATRONES:
+- El glosario muestra su LÓGICA CREATIVA — usala para inventar nombres NUEVOS para lo que ves en los frames
+- A veces repetir un nombre del glosario funciona, a veces inventar uno nuevo, a veces usar el nombre técnico real. Es orgánico
+- Los patrones son MECANISMOS — aplicá el mecanismo, no la frase
 
-GENERÁ 3 OPCIONES DE COPY basadas en lo que VES en los frames:
-OPCIÓN_N: [nombre], PATRÓN USADO: [mecanismo], COPY COMPLETO: [guión específico], NOMBRES SUGERIDOS: [nombres nuevos para lo que aparece]`;
+Glosario (lógica creativa, no copiar): ${Object.entries(glosarioObj).map(([k,v])=>`"${k}"=${v}`).join(', ')||'En construcción'}
+Patrones: ${patronesArr.join(' | ')||'En construcción'}
+Videos previos (referencia de estilo): ${contextArr.slice(0,4).map(v=>`[${parseInt(v.views)?.toLocaleString()} views] ${(v.analysis||'').substring(0,500)}`).join('\n---\n')}
+
+${frameImages.length > 0 ? `Te mando ${frameImages.length} frames del video nuevo (1 por segundo). Basate en lo que VES para hacer el copy específico.` : 'No se pudo procesar el video.'}
+${prevFrameImages.length > 0 ? 'También frames de videos anteriores para entender el estilo visual.' : ''}
+
+GENERÁ 3 OPCIONES DE COPY completamente distintas:
+OPCIÓN_N: [nombre del enfoque]
+PATRÓN USADO: [mecanismo narrativo]
+COPY COMPLETO: [guión listo para usar, en voz de Javier — sarcástico, doméstico, con expertise disfrazado]
+NOMBRES NUEVOS: [nombres inventados frescos para los materiales de ESTE video, nunca usados antes]`;
 
   try {
     const content = [{ type: 'text', text: prompt }, ...frameImages];
