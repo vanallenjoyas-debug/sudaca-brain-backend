@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '2.1.2';
+const VERSION = '2.1.3';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -222,6 +222,17 @@ app.post('/refine', requireAuth, async (req, res) => {
   try {
     const refined = await callClaude([{ role: 'user', content: `Análisis de video de Joyería Sudaca:\n\n${analysis}\n\nJavier respondió:\n${answers.map(a=>`P: ${a.question}\nR: ${a.answer}`).join('\n\n')}\n\nActualizá solo GLOSARIO DETECTADO y PATRONES REPLICABLES.` }], 1000);
     res.json({ refined });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ---- GENERATE FRASES ----
+app.post('/generate-frases', requireAuth, async (req, res) => {
+  const { description, glosario, contextVideos } = req.body;
+  try {
+    const { copysReales, glosarioStr } = buildContext(contextVideos, glosario);
+    const prompt = `Sos el asistente creativo de Javier Romero, joyero argentino "Joyería Sudaca". Tu tarea es generar FRASES CORTAS Y DISRUPTIVAS para un proceso específico del taller.\n\nCÓMO HABLA JAVIER (aprendé su lógica de los copys reales):\n${copysReales || 'Sin copys disponibles'}\n\nGlosario conocido: ${glosarioStr||'en construcción'}\n\nSU LÓGICA PARA NOMBRAR COSAS:\n- Toma algo técnico/peligroso y lo nombra con algo cotidiano o absurdo\n- Resignación activa: acepta lo malo como si fuera normal\n- Anticlímax: expectativa → remate mundano\n- Humor seco, directo, sin floritura\n\nPROCESO A DESCRIBIR: ${description}\n\nGenerá 15 frases cortas y disruptivas para distintos momentos de ese proceso. Cada frase debe poder usarse como comentario al pie de un video o como texto en pantalla durante la edición. Numeradas del 1 al 15. Sin explicaciones, solo las frases.`;
+    const copy = await callGemini(prompt);
+    res.json({ copy });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
