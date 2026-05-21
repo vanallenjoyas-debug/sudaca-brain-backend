@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '1.8.2';
+const VERSION = '1.8.3';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -234,7 +234,6 @@ ${(contextVideos||[]).filter(v=>v.copy_original).slice(-6).map(v=>`[${parseInt(v
 Análisis adicional (contexto): ${(contextVideos||[]).slice(-3).map(v=>`${(v.analysis||'').substring(0,200)}`).join('\n---\n')}
 
 NUEVO VIDEO: ${description}
-Momento: ${momento}, Tono: ${tono}
 
 LONGITUD CRÍTICA: Los videos de Javier duran 30-45 segundos. El copy tiene que ser de 80-120 palabras máximo. Contá las palabras antes de entregar. Si superás 120 palabras, recortá.
 
