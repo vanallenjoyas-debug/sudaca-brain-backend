@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '2.1.7';
+const VERSION = '2.1.8';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -430,6 +430,17 @@ app.post('/patrones', requireAuth, async (req, res) => {
   const { patron, video_url } = req.body;
   try { await pool.query(`INSERT INTO patrones (patron,video_url) VALUES ($1,$2) ON CONFLICT (patron) DO NOTHING`,[patron,video_url||null]); res.json({ok:true}); }
   catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ---- PULIR COPY ----
+app.post('/pulir-copy', requireAuth, async (req, res) => {
+  const { borrador, glosario, contextVideos } = req.body;
+  try {
+    const { copysReales, glosarioStr } = buildContext(contextVideos, glosario);
+    const prompt = `Sos el asistente creativo de Javier Romero, joyero argentino "Joyería Sudaca". Javier armó un borrador de copy juntando frases sueltas. Tu tarea es pulirlo: darle continuidad, ritmo y cohesión sin perder su voz.\n\nVOZ DE JAVIER (referencia):\n${copysReales || 'Sin copys disponibles'}\n\nGlosario: ${glosarioStr||'en construcción'}\n\nREGLAS:\n- Mantené las ideas y frases que Javier eligió — no las reemplaces\n- Agregá conectores, transiciones o ajustes mínimos para que fluya\n- Respetá el ritmo cortado y las frases cortas\n- NO agregues frases nuevas importantes, solo pulís lo que hay\n- Máximo 150 palabras\n\nBORRADOR DE JAVIER:\n${borrador}\n\nDevolvé el copy pulido. Solo el texto, sin explicaciones.`;
+    const copy = await callGemini(prompt);
+    res.json({ copy });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ---- FRASES APROBADAS ----
