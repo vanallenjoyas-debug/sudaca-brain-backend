@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '1.7.5';
+const VERSION = '1.7.6';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -105,6 +105,12 @@ CONTEXTO:
 - Nombres inventados para materiales (bórax = "sal del himalaya"/"lágrimas de ángel", ácido nítrico = "bebida de los pueblos nobles", lima = "supositorio del joyero") — VARÍAN, no son fijos
 - Humor de taller, cuarta pared, anticlímax, resignación activa
 - Frase característica: "porque esto es joyería sudaca papá"
+
+SOBRE LA ESPONTANEIDAD — MUY IMPORTANTE:
+- El 95% de lo que dice Javier es COMPLETAMENTE ESPONTÁNEO: nombres inventados, comparaciones, humor, remates
+- Lo que es PREMEDITADO son las frases que se REPITEN entre videos (ej: "porque esto es joyería sudaca papá", frases del glosario conocido)
+- Para identificar si algo es premeditado: buscalo en el glosario y patrones previos. Si está ahí, es recurrente y posiblemente deliberado. Si no está, es espontáneo
+- NUNCA preguntes "¿fue espontáneo o planificado?" — la respuesta siempre es espontáneo salvo que esté en el glosario/patrones
 
 ${glosarioStr}
 Patrones previos: ${patronesArr.join(', ') || 'ninguno aún'}
