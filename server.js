@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '1.8.0';
+const VERSION = '1.8.1';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -231,13 +231,15 @@ Videos previos (para entender su estilo, no para repetir): ${(contextVideos||[])
 NUEVO VIDEO: ${description}
 Momento: ${momento}, Tono: ${tono}
 
+LONGITUD CRÍTICA: Los videos de Javier duran 30-45 segundos. El copy tiene que ser de 80-120 palabras máximo. Contá las palabras antes de entregar. Si superás 120 palabras, recortá.
+
 GENERÁ 3 OPCIONES DE COPY completamente distintas en enfoque:
 OPCIÓN_N: [nombre del enfoque]
 PATRÓN USADO: [qué mecanismo narrativo aplica]
-COPY COMPLETO: [guión listo para usar, en voz de Javier]
-NOMBRES NUEVOS SUGERIDOS: [nombres inventados frescos para los materiales de ESTE video específico, nunca usados antes]
+COPY COMPLETO: [guión listo para usar, en voz de Javier — MÁXIMO 120 PALABRAS]
+NOMBRES NUEVOS: [nombres inventados para los materiales si aplica]
 
-El copy tiene que sonar como Javier habla — sarcástico, doméstico, con expertise técnico disfrazado de ignorancia. No como un manual.` }], 2000);
+El copy tiene que sonar como Javier habla — sarcástico, doméstico, con expertise técnico disfrazado. No como un manual.` }], 2000);
     res.json({ copy });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -291,11 +293,13 @@ Videos previos (referencia de estilo): ${contextArr.slice(0,4).map(v=>`[${parseI
 ${frameImages.length > 0 ? `Te mando ${frameImages.length} frames del video nuevo (1 por segundo). Basate en lo que VES para hacer el copy específico.` : 'No se pudo procesar el video.'}
 ${prevFrameImages.length > 0 ? 'También frames de videos anteriores para entender el estilo visual.' : ''}
 
+LONGITUD CRÍTICA: Los videos de Javier duran 30-45 segundos. El copy tiene que ser de 80-120 palabras máximo. Contá las palabras antes de entregar. Si superás 120 palabras, recortá.
+
 GENERÁ 3 OPCIONES DE COPY completamente distintas:
 OPCIÓN_N: [nombre del enfoque]
 PATRÓN USADO: [mecanismo narrativo]
-COPY COMPLETO: [guión listo para usar, en voz de Javier — sarcástico, doméstico, con expertise disfrazado]
-NOMBRES NUEVOS: [nombres inventados frescos para los materiales de ESTE video, nunca usados antes]`;
+COPY COMPLETO: [guión listo para usar, en voz de Javier — MÁXIMO 120 PALABRAS]
+NOMBRES NUEVOS: [nombres inventados para los materiales si aplica]`;
 
   try {
     const content = [{ type: 'text', text: prompt }, ...frameImages];
