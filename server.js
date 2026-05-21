@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '1.8.4';
+const VERSION = '1.8.5';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -48,11 +48,11 @@ async function initDB() {
 }
 
 // ---- CLAUDE ----
-const callClaude = async (messages, maxTokens = 4000) => {
+const callClaude = async (messages, maxTokens = 4000, model = 'claude-sonnet-4-20250514') => {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: maxTokens, messages })
+    body: JSON.stringify({ model, max_tokens: maxTokens, messages })
   });
   const data = await response.json();
   if (data.error) throw new Error(data.error.message);
@@ -243,15 +243,15 @@ Análisis adicional (contexto): ${(contextVideos||[]).slice(-3).map(v=>`${(v.ana
 
 NUEVO VIDEO: ${description}
 
-LONGITUD CRÍTICA: Los videos de Javier duran 30-45 segundos. El copy tiene que ser de 80-120 palabras máximo. Contá las palabras antes de entregar. Si superás 120 palabras, recortá.
+LONGITUD CRÍTICA: Los videos de Javier duran 30-45 segundos = 60-90 palabras máximo. Contá las palabras. Si superás 90, recortá sin piedad.
 
-GENERÁ 3 OPCIONES DE COPY completamente distintas en enfoque:
+SOBRE LAS FRASES CONOCIDAS: Podés usar UNA SOLA frase del glosario o copys anteriores por opción, la que mejor encaje. El resto tiene que ser nuevo. Si usás más de una frase conocida, el copy pierde frescura.
+
+GENERÁ 3 OPCIONES DE COPY completamente distintas:
 OPCIÓN_N: [nombre del enfoque]
-PATRÓN USADO: [qué mecanismo narrativo aplica]
-COPY COMPLETO: [guión listo para usar, en voz de Javier — MÁXIMO 120 PALABRAS]
-NOMBRES NUEVOS: [nombres inventados para los materiales si aplica]
-
-El copy tiene que sonar como Javier habla — sarcástico, doméstico, con expertise técnico disfrazado. No como un manual.` }], 2000);
+PATRÓN USADO: [mecanismo narrativo]
+COPY COMPLETO: [guión — MÁXIMO 90 PALABRAS, cortado como habla Javier: frases cortas, ritmo irregular]
+FRASE CONOCIDA USADA: [cuál usaste y por qué]` }], 2000, 'claude-opus-4-5-20251001');
     res.json({ copy });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -316,7 +316,7 @@ NOMBRES NUEVOS: [nombres inventados para los materiales si aplica]`;
   try {
     const content = [{ type: 'text', text: prompt }, ...frameImages];
     if (prevFrameImages.length > 0) content.push({ type: 'text', text: 'Frames de videos anteriores:' }, ...prevFrameImages);
-    const copy = await callClaude([{ role: 'user', content }], 2000);
+    const copy = await callClaude([{ role: 'user', content }], 2000, 'claude-opus-4-5-20251001');
     res.json({ copy });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
