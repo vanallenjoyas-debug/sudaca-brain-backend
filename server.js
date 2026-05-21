@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '1.8.5';
+const VERSION = '1.8.7';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -251,12 +251,40 @@ GENERÁ 3 OPCIONES DE COPY completamente distintas:
 OPCIÓN_N: [nombre del enfoque]
 PATRÓN USADO: [mecanismo narrativo]
 COPY COMPLETO: [guión — MÁXIMO 90 PALABRAS, cortado como habla Javier: frases cortas, ritmo irregular]
-FRASE CONOCIDA USADA: [cuál usaste y por qué]` }], 2000, 'claude-opus-4-5-20251001');
+FRASE CONOCIDA USADA: [cuál usaste y por qué]` }], 2000, 'claude-opus-4-5');
     res.json({ copy });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ---- GENERATE WITH VIDEO ----
+// ---- GENERATE SIMPLE ----
+app.post('/generate-simple', requireAuth, async (req, res) => {
+  const { description, glosario, patrones, contextVideos } = req.body;
+  try {
+    const copysReales = (contextVideos||[]).filter(v=>v.copy_original).slice(-8).map(v=>`[${parseInt(v.views)?.toLocaleString()||'?'} views]\n${v.copy_original}`).join('\n---\n');
+    const glosarioStr = Object.entries(glosario||{}).slice(0,10).map(([k,v])=>`"${k}" = ${v}`).join(', ');
+
+    const prompt = `Sos el asistente creativo de Javier Romero, joyero argentino "Joyería Sudaca" (~170K seguidores). Escribís guiones para sus Shorts de 30-45 segundos (60-90 palabras máximo).
+
+CÓMO HABLA JAVIER — leé estos guiones reales suyos y aprendé su voz:
+${copysReales || 'Sin copys disponibles aún'}
+
+SU LÓGICA:
+- Habla como un joyero cansado con humor seco
+- Resignación activa: acepta lo malo como si fuera normal
+- Anticlímax: expectativa → remate mundano o personal
+- Frases cortas, ritmo irregular, piensa en voz alta
+- Expertise real disfrazado de ignorancia o desinterés
+- Inventa nombres domésticos para cosas técnicas (ejemplos del glosario: ${glosarioStr||'en construcción'})
+- NO metáforas elaboradas, NO sonar a marketing
+
+VIDEO A GUIONAR: ${description}
+
+Generá 3 opciones de guión con enfoques distintos. Máximo 90 palabras cada uno. Sin etiquetas ni explicaciones — solo el guión.`;
+
+    const copy = await callClaude([{ role: 'user', content: prompt }], 2000, 'claude-opus-4-5');
+    res.json({ copy });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 app.post('/generate-with-video', requireAuth, upload.single('video'), async (req, res) => {
   if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'ANTHROPIC_API_KEY no configurada' });
   const { glosario, patrones, contextVideos } = req.body;
@@ -316,7 +344,7 @@ NOMBRES NUEVOS: [nombres inventados para los materiales si aplica]`;
   try {
     const content = [{ type: 'text', text: prompt }, ...frameImages];
     if (prevFrameImages.length > 0) content.push({ type: 'text', text: 'Frames de videos anteriores:' }, ...prevFrameImages);
-    const copy = await callClaude([{ role: 'user', content }], 2000, 'claude-opus-4-5-20251001');
+    const copy = await callClaude([{ role: 'user', content }], 2000, 'claude-opus-4-5');
     res.json({ copy });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
