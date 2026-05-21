@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '2.1.3';
+const VERSION = '2.1.4';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -222,6 +222,17 @@ app.post('/refine', requireAuth, async (req, res) => {
   try {
     const refined = await callClaude([{ role: 'user', content: `Análisis de video de Joyería Sudaca:\n\n${analysis}\n\nJavier respondió:\n${answers.map(a=>`P: ${a.question}\nR: ${a.answer}`).join('\n\n')}\n\nActualizá solo GLOSARIO DETECTADO y PATRONES REPLICABLES.` }], 1000);
     res.json({ refined });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ---- GENERATE FRASES NUEVAS ----
+app.post('/generate-frases-new', requireAuth, async (req, res) => {
+  const { description, glosario, contextVideos } = req.body;
+  try {
+    const { copysReales, glosarioStr } = buildContext(contextVideos, glosario);
+    const prompt = `Sos el asistente creativo de Javier Romero, joyero argentino "Joyería Sudaca". Tu tarea es generar FRASES CORTAS Y DISRUPTIVAS 100% NUEVAS para un proceso del taller.\n\nAPRENDÉ SU LÓGICA de estos copys reales (pero NO copies ninguna frase suya):\n${copysReales || 'Sin copys disponibles'}\n\nGlosario conocido (usalo como inspiración, no para copiar): ${glosarioStr||'en construcción'}\n\nSU LÓGICA:\n- Toma algo técnico/peligroso y lo nombra con algo cotidiano o absurdo\n- Resignación activa: acepta lo malo como si fuera normal\n- Anticlímax: expectativa → remate mundano\n- Humor seco, directo, argentino\n\nREGLA DE ORO: PROHIBIDO usar cualquier frase, expresión o término que ya aparezca en los copys anteriores. Todo tiene que ser inventado nuevo. Si estás a punto de escribir algo que Javier ya dijo, cambialo.\n\nPROCESO: ${description}\n\nGenerá 15 frases cortas y disruptivas COMPLETAMENTE NUEVAS para distintos momentos de ese proceso. Numeradas del 1 al 15. Solo las frases.`;
+    const copy = await callGemini(prompt);
+    res.json({ copy });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
