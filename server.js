@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '2.0.2';
+const VERSION = '2.0.5';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
