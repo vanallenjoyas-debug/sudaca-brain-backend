@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '2.1.6';
+const VERSION = '2.1.7';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -231,7 +231,7 @@ app.post('/generate-frases-new', requireAuth, async (req, res) => {
   const { description, glosario, contextVideos } = req.body;
   try {
     const { copysReales, glosarioStr } = buildContext(contextVideos, glosario);
-    const prompt = `Sos el asistente creativo de Javier Romero, joyero argentino "Joyería Sudaca". Tu tarea es generar FRASES CORTAS Y DISRUPTIVAS 100% NUEVAS para un proceso del taller.\n\nAPRENDÉ SU LÓGICA de estos copys reales (pero NO copies ninguna frase suya):\n${copysReales || 'Sin copys disponibles'}\n\nGlosario conocido (usalo como inspiración, no para copiar): ${glosarioStr||'en construcción'}\n\nSU LÓGICA:\n- Toma algo técnico/peligroso y lo nombra con algo cotidiano o absurdo\n- Resignación activa: acepta lo malo como si fuera normal\n- Anticlímax: expectativa → remate mundano\n- Humor seco, directo, argentino\n\nREGLA DE ORO: PROHIBIDO usar cualquier frase, expresión o término que ya aparezca en los copys anteriores. Todo tiene que ser inventado nuevo. Si estás a punto de escribir algo que Javier ya dijo, cambialo.\n\nPROCESO: ${description}\n\nGenerá 15 frases cortas y disruptivas COMPLETAMENTE NUEVAS para distintos momentos de ese proceso. Numeradas del 1 al 15. Solo las frases.`;
+    const prompt = `Sos el asistente creativo de Javier Romero, joyero argentino "Joyería Sudaca". Tu tarea es generar FRASES CORTAS Y DISRUPTIVAS 100% NUEVAS para un proceso del taller.\n\nAPRENDÉ SU LÓGICA de estos copys reales (pero NO copies ninguna frase suya):\n${copysReales || 'Sin copys disponibles'}\n\nGlosario conocido (usalo como inspiración, no para copiar): ${glosarioStr||'en construcción'}\n\nSU LÓGICA:\n- Toma algo técnico/peligroso y lo nombra con algo cotidiano o absurdo\n- Resignación activa: acepta lo malo como si fuera normal\n- Anticlímax: expectativa → remate mundano\n- Humor seco, directo, argentino\n\nREGLA DE ORO: PROHIBIDO usar cualquier frase, expresión o término que ya aparezca en los copys anteriores. Todo tiene que ser inventado nuevo. Si estás a punto de escribir algo que Javier ya dijo, cambialo.\n\nMOMENTO A NARRAR: ${description}\n\nLas 15 frases son 15 VARIACIONES del mismo momento — 15 formas distintas de decir lo mismo. No es una secuencia de pasos, es el mismo instante narrado de 15 maneras diferentes, con distintos ángulos, tonos y comparaciones. Todas ancladas al contexto específico.\n\nGenerá 15 variaciones. Numeradas del 1 al 15. Solo las frases.`;
     const copy = await callGemini(prompt);
     res.json({ copy });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -242,7 +242,7 @@ app.post('/generate-frases', requireAuth, async (req, res) => {
   const { description, glosario, contextVideos } = req.body;
   try {
     const { copysReales, glosarioStr } = buildContext(contextVideos, glosario);
-    const prompt = `Sos el asistente creativo de Javier Romero, joyero argentino "Joyería Sudaca". Tu tarea es generar FRASES CORTAS Y DISRUPTIVAS para un proceso específico del taller.\n\nCÓMO HABLA JAVIER (aprendé su lógica de los copys reales):\n${copysReales || 'Sin copys disponibles'}\n\nGlosario conocido: ${glosarioStr||'en construcción'}\n\nSU LÓGICA PARA NOMBRAR COSAS:\n- Toma algo técnico/peligroso y lo nombra con algo cotidiano o absurdo\n- Resignación activa: acepta lo malo como si fuera normal\n- Anticlímax: expectativa → remate mundano\n- Humor seco, directo, sin floritura\n\nPROCESO A DESCRIBIR: ${description}\n\nGenerá 15 frases cortas y disruptivas para distintos momentos de ese proceso. Cada frase debe poder usarse como comentario al pie de un video o como texto en pantalla durante la edición. Numeradas del 1 al 15. Sin explicaciones, solo las frases.`;
+    const prompt = `Sos el asistente creativo de Javier Romero, joyero argentino "Joyería Sudaca". Tu tarea es generar FRASES CORTAS Y DISRUPTIVAS para un proceso específico del taller.\n\nCÓMO HABLA JAVIER (aprendé su lógica de los copys reales):\n${copysReales || 'Sin copys disponibles'}\n\nGlosario conocido: ${glosarioStr||'en construcción'}\n\nSU LÓGICA PARA NOMBRAR COSAS:\n- Toma algo técnico/peligroso y lo nombra con algo cotidiano o absurdo\n- Resignación activa: acepta lo malo como si fuera normal\n- Anticlímax: expectativa → remate mundano\n- Humor seco, directo, sin floritura\n\nMOMENTO A NARRAR: ${description}\n\nLas 15 frases son 15 VARIACIONES del mismo momento — 15 formas distintas de decir lo mismo con distintos ángulos, tonos y comparaciones. Todas ancladas al contexto específico.\n\nGenerá 15 variaciones. Numeradas del 1 al 15. Solo las frases.`;
     const copy = await callGemini(prompt);
     res.json({ copy });
   } catch (err) { res.status(500).json({ error: err.message }); }
