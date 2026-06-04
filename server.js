@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '2.1.9';
+const VERSION = '2.2.0';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -430,6 +430,17 @@ app.post('/patrones', requireAuth, async (req, res) => {
   const { patron, video_url } = req.body;
   try { await pool.query(`INSERT INTO patrones (patron,video_url) VALUES ($1,$2) ON CONFLICT (patron) DO NOTHING`,[patron,video_url||null]); res.json({ok:true}); }
   catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ---- ARMAR COPY ----
+app.post('/armar-copy', requireAuth, async (req, res) => {
+  const { contexto, frases, copysReales, glosario } = req.body;
+  try {
+    const glosarioStr = Object.entries(glosario||{}).slice(0,15).map(([k,v])=>`"${k}" = ${v}`).join(', ');
+    const prompt = `Sos el asistente creativo de Javier Romero, joyero argentino "Joyería Sudaca" (~170K seguidores).\n\nVOZ DE JAVIER — ejemplos reales:\n${copysReales || 'Sin copys disponibles'}\n\nGlosario: ${glosarioStr||'en construcción'}\n\nJavier eligió estas frases para armar el copy de su próximo video:\n${frases}\n\nEl video trata de: ${contexto}\n\nTu tarea: armá un copy coherente usando ESTAS frases como base. Podés ajustar pequeños conectores o transiciones para que fluya, pero las frases elegidas tienen que estar presentes. Respetá el ritmo cortado de Javier — frases cortas, anticlímax, resignación activa. Máximo 150 palabras.\n\nDevolvé solo el copy, sin explicaciones.`;
+    const copy = await callGemini(prompt);
+    res.json({ copy });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ---- PULIR COPY ----
