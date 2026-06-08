@@ -6,7 +6,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VERSION = '2.2.0';
+const VERSION = '2.2.1';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/', limits: { fileSize: 100 * 1024 * 1024 } });
@@ -430,6 +430,19 @@ app.post('/patrones', requireAuth, async (req, res) => {
   const { patron, video_url } = req.body;
   try { await pool.query(`INSERT INTO patrones (patron,video_url) VALUES ($1,$2) ON CONFLICT (patron) DO NOTHING`,[patron,video_url||null]); res.json({ok:true}); }
   catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ---- CHAT ----
+app.post('/chat', requireAuth, async (req, res) => {
+  const { messages, context } = req.body;
+  try {
+    const claudeMessages = messages.map(m=>({role:m.role, content:m.content}));
+    const reply = await callClaude([
+      {role:'user', content: context + '\n\n---\n\nPrimera pregunta del usuario:\n' + claudeMessages[0].content},
+      ...claudeMessages.slice(1)
+    ], 2000);
+    res.json({ reply });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ---- ARMAR COPY ----
